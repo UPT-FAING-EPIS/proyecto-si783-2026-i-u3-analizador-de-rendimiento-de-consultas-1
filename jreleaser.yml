@@ -72,6 +72,13 @@ packagers:
     active: ALWAYS
     continueOnError: false
     packageName: qa
+    repository:
+      active: ALWAYS
+      owner: andre-carbajal
+      name: qa-snap
+      branch: master
+      username: andre-carbajal
+      token: '{{ env.SNAP_REPO_TOKEN }}'
     remoteBuild: true
     grade: stable
     confinement: strict

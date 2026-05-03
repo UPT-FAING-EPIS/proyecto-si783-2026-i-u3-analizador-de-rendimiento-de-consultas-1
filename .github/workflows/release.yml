@@ -139,6 +139,7 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           JRELEASER_SCOOP_GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          SNAP_REPO_TOKEN: ${{ secrets.SNAP_REPO_TOKEN }}
           JRELEASER_SNAP_EXPORT_LOGIN: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
 
       - name: Upload JReleaser logs
