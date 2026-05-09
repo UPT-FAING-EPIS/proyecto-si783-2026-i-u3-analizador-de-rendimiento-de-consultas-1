@@ -42,7 +42,7 @@ def test_action_show_history_uses_history_screen_when_records_exist(monkeypatch)
     monkeypatch.setattr(AnalysisScreen, "app", property(lambda _self: fake_app))
 
     class _FakeHistoryManager:
-        def get_all(self) -> list[int]:
+        def get_all_for_profile(self, _profile_name: str) -> list[int]:
             return [1]
 
     pushed = {"called": False}

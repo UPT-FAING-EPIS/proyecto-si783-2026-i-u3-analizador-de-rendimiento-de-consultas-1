@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from textual import on
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Input, Static
+from textual.widgets import Button, DataTable, Footer, Input, Static, TabbedContent, TabPane
 
 from query_analyzer.tui.history_manager import AnalysisRecord, get_history_manager
 from query_analyzer.tui.widgets import (
@@ -28,6 +29,16 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     """
 
     BINDINGS = [
+        Binding("1", "select_tab_summary", "1:Res", priority=True),
+        Binding("2", "select_tab_metrics", "2:Met", priority=True),
+        Binding("3", "select_tab_plan", "3:Plan", priority=True),
+        Binding("4", "select_tab_ai", "4:IA", priority=True),
+        Binding("ctrl+right", "next_tab", "Ctrl+→:Sig", priority=True),
+        Binding("ctrl+left", "previous_tab", "Ctrl+←:Ant", priority=True),
+        Binding("/", "focus_search", "/:Buscar", priority=True),
+        Binding("l", "focus_list", "l:Lista", priority=True),
+        Binding("b", "focus_buttons", "b:Botones", priority=True),
+        Binding("t", "focus_tabs", "t:Pestañas", priority=True),
         ("escape", "go_back", "Volver"),
         ("j", "select_next", "Siguiente"),
         ("k", "select_previous", "Anterior"),
@@ -36,6 +47,7 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
         ("down", "select_next", "Siguiente"),
         ("up", "select_previous", "Anterior"),
         ("delete", "delete_selected", "Borrar"),
+        ("y", "copy_query", "Copiar Query"),
         ("c", "clear_history", "Limpiar"),
         ("enter", "load_selected", "Cargar"),
         ("q", "quit", "Salir"),
@@ -78,7 +90,7 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     }
 
     HistoryScreen #list-column {
-        width: 1fr;
+        width: 3fr;
         height: 1fr;
         margin-right: 1;
         border: solid $accent;
@@ -88,6 +100,8 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     HistoryScreen #history-list {
         width: 1fr;
         height: 1fr;
+        background: $panel;
+        border: solid $surface-lighten-1;
         overflow-y: auto;
         scrollbar-size-vertical: 0;
     }
@@ -130,12 +144,27 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     HistoryScreen #detail-column {
         width: 2fr;
         height: 1fr;
+    }
+
+    HistoryScreen #detail-tabbed {
+        width: 1fr;
+        height: 1fr;
+        border: solid $accent;
+    }
+
+    HistoryScreen TabPane {
+        padding: 1;
         overflow-y: auto;
         scrollbar-size-vertical: 0;
     }
 
-    HistoryScreen #detail-column:focus {
+    HistoryScreen TabPane:focus {
         scrollbar-size-vertical: 1;
+    }
+
+    HistoryScreen #detail-column QuerySummary {
+        height: auto;
+        max-height: 9;
     }
 
     HistoryScreen #detail-column Static {
@@ -174,10 +203,11 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, profile_name: str) -> None:
         super().__init__()
+        self._profile_name = profile_name
         self._history = get_history_manager()
-        self._filtered_records = self._history.get_all()
+        self._filtered_records = self._history.get_all_for_profile(profile_name)
         self._selected_index = 0
 
     def compose(self) -> ComposeResult:
@@ -195,14 +225,19 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
             with Horizontal(id="workspace"):
                 # Left: History list
                 with Vertical(id="list-column"):
-                    yield Static(id="history-list")
+                    yield DataTable(id="history-list")
 
                 # Right: Details
                 with Vertical(id="detail-column"):
-                    yield QuerySummary()
-                    yield MetricsPanel()
-                    yield PlanTreeWidget()
-                    yield AIInsightsPanel()
+                    with TabbedContent(initial="tab-summary", id="detail-tabbed"):
+                        with TabPane("Resumen", id="tab-summary"):
+                            yield QuerySummary()
+                        with TabPane("Métricas", id="tab-metrics"):
+                            yield MetricsPanel()
+                        with TabPane("Plan", id="tab-plan"):
+                            yield PlanTreeWidget()
+                        with TabPane("IA", id="tab-ai"):
+                            yield AIInsightsPanel()
 
             # Actions
             with Horizontal(id="actions-row"):
@@ -218,9 +253,53 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
 
     def on_mount(self) -> None:
         """Mount screen and render initial content."""
-        self.query_one("#search-box", Input).focus()
+        table = self.query_one("#history-list", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        table.add_column("Hora", width=10)
+        table.add_column("Query", width=44)
+        table.add_column("Perfil", width=18)
         self._render_list()
+        self._render_detail()
         self._update_status()
+        self.query_one("#search-box", Input).focus()
+
+    def action_focus_search(self) -> None:
+        """Focus search input."""
+        self.query_one("#search-box", Input).focus()
+
+    def action_focus_list(self) -> None:
+        """Focus history list table."""
+        self.query_one("#history-list", DataTable).focus()
+
+    def action_focus_buttons(self) -> None:
+        """Focus first action button."""
+        self.query_one("#btn-load", Button).focus()
+
+    def action_focus_tabs(self) -> None:
+        """Focus tabbed detail panel."""
+        self.query_one("#detail-tabbed", TabbedContent).focus()
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Sync selected index when highlighted row changes."""
+        if event.data_table.id != "history-list":
+            return
+        if event.cursor_row < 0 or event.cursor_row >= len(self._filtered_records):
+            return
+        self._selected_index = event.cursor_row
+        self._render_detail()
+        self._update_status()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Load selected history row when pressing Enter in table."""
+        if event.data_table.id != "history-list":
+            return
+
+        if event.cursor_row < 0 or event.cursor_row >= len(self._filtered_records):
+            return
+
+        self._selected_index = event.cursor_row
+        self.action_load_selected()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle search input changes.
@@ -231,22 +310,26 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
         search_text = event.value.strip()
 
         if not search_text:
-            self._filtered_records = self._history.get_all()
+            self._filtered_records = self._history.get_all_for_profile(self._profile_name)
         else:
             # Search in both query text and profile names
             search_lower = search_text.lower()
             self._filtered_records = [
-                r for r in self._history.get_all()
+                r for r in self._history.get_all_for_profile(self._profile_name)
                 if search_lower in r.query.lower()
                 or search_lower in r.profile_name.lower()
             ]
 
         self._selected_index = 0
         self._render_list()
+        self._render_detail()
         self._update_status()
 
     def action_go_back(self) -> None:
         """Go back to previous screen."""
+        if self.query_one("#search-box", Input).has_focus:
+            self.action_focus_list()
+            return
         self.dismiss(None)
 
     def action_select_next(self) -> None:
@@ -295,11 +378,7 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
             return
 
         record = self._filtered_records[self._selected_index]
-        # Find original index in full history
-        for i, r in enumerate(self._history.get_all()):
-            if r.created_at == record.created_at:
-                self._history.delete(i)
-                break
+        self._history.delete_record(record)
 
         # Re-filter and render
         search_box = self.query_one("#search-box", Input)
@@ -307,12 +386,12 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
         if search_text:
             search_lower = search_text.lower()
             self._filtered_records = [
-                r for r in self._history.get_all()
+                r for r in self._history.get_all_for_profile(self._profile_name)
                 if search_lower in r.query.lower()
                 or search_lower in r.profile_name.lower()
             ]
         else:
-            self._filtered_records = self._history.get_all()
+            self._filtered_records = self._history.get_all_for_profile(self._profile_name)
 
         if self._filtered_records and self._selected_index >= len(
             self._filtered_records
@@ -325,7 +404,7 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
 
     def action_clear_history(self) -> None:
         """Clear all history after confirmation."""
-        self._history.clear()
+        self._history.clear_profile(self._profile_name)
         self._filtered_records = []
         self._selected_index = 0
         self._render_list()
@@ -335,6 +414,58 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     def action_quit(self) -> None:
         """Exit the application."""
         self.app.exit()
+
+    def action_copy_query(self) -> None:
+        """Copy selected query (simulated feedback)."""
+        self.on_copy_query_pressed()
+
+    def action_select_tab_summary(self) -> None:
+        """Switch to Summary tab."""
+        try:
+            self.query_one("#detail-tabbed", TabbedContent).active = "tab-summary"
+        except Exception:
+            pass
+
+    def action_select_tab_metrics(self) -> None:
+        """Switch to Metrics tab."""
+        try:
+            self.query_one("#detail-tabbed", TabbedContent).active = "tab-metrics"
+        except Exception:
+            pass
+
+    def action_select_tab_plan(self) -> None:
+        """Switch to Plan tab."""
+        try:
+            self.query_one("#detail-tabbed", TabbedContent).active = "tab-plan"
+        except Exception:
+            pass
+
+    def action_select_tab_ai(self) -> None:
+        """Switch to AI tab."""
+        try:
+            self.query_one("#detail-tabbed", TabbedContent).active = "tab-ai"
+        except Exception:
+            pass
+
+    def action_next_tab(self) -> None:
+        """Move to next tab."""
+        try:
+            tabbed = self.query_one("#detail-tabbed", TabbedContent)
+            tab_ids = ["tab-summary", "tab-metrics", "tab-plan", "tab-ai"]
+            idx = tab_ids.index(tabbed.active)
+            tabbed.active = tab_ids[(idx + 1) % len(tab_ids)]
+        except Exception:
+            pass
+
+    def action_previous_tab(self) -> None:
+        """Move to previous tab."""
+        try:
+            tabbed = self.query_one("#detail-tabbed", TabbedContent)
+            tab_ids = ["tab-summary", "tab-metrics", "tab-plan", "tab-ai"]
+            idx = tab_ids.index(tabbed.active)
+            tabbed.active = tab_ids[(idx - 1) % len(tab_ids)]
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#btn-load")
     def on_load_pressed(self) -> None:
@@ -366,35 +497,22 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
 
     def _render_list(self) -> None:
         """Render history list."""
-        list_widget = self.query_one("#history-list", Static)
+        list_widget = self.query_one("#history-list", DataTable)
+        list_widget.clear(columns=False)
 
         if not self._filtered_records:
-            list_widget.update("[dim]No history records[/dim]")
             return
 
-        lines = []
-        for i, record in enumerate(self._filtered_records):
-            selected = " → " if i == self._selected_index else "   "
+        for record in self._filtered_records:
             time_str = record.created_at.strftime("%H:%M:%S")
             query_preview = record.query_preview(40)
-            profile_str = f"[{record.profile_name}]"
+            profile_str = record.profile_name
+            list_widget.add_row(time_str, query_preview, profile_str, key=record.id)
 
-            if i == self._selected_index:
-                line = (
-                    f"{selected}[inverse]{time_str} "
-                    f"{query_preview} "
-                    f"{profile_str}[/inverse]"
-                )
-            else:
-                line = (
-                    f"{selected}[dim]{time_str}[/dim] "
-                    f"{query_preview} "
-                    f"[yellow]{profile_str}[/yellow]"
-                )
+        if self._selected_index >= len(self._filtered_records):
+            self._selected_index = len(self._filtered_records) - 1
 
-            lines.append(line)
-
-        list_widget.update("\n".join(lines))
+        list_widget.move_cursor(row=self._selected_index, column=0)
 
     def _render_detail(self) -> None:
         """Render detail view for selected record."""
@@ -438,7 +556,7 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
             status.update("[yellow]No hay análisis en el histórico[/yellow]")
             return
 
-        total = self._history.size()
+        total = len(self._history.get_all_for_profile(self._profile_name))
         current = self._selected_index + 1
         filtered = len(self._filtered_records)
 

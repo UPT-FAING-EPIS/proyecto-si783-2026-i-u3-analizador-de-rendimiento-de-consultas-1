@@ -39,6 +39,15 @@ class AnalysisScreen(Screen[None]):
         Binding("2", "select_tab_metrics", "2:Met", priority=True),
         Binding("3", "select_tab_plan", "3:Plan", priority=True),
         Binding("4", "select_tab_ai", "4:IA", priority=True),
+        Binding("b", "focus_buttons", "b:Botones", priority=True),
+        Binding("a", "button_left", "a:Btn←", priority=True),
+        Binding("d", "button_right", "d:Btn→", priority=True),
+        Binding("w", "button_up", "w:Btn↑", priority=True),
+        Binding("s", "button_down", "s:Btn↓", priority=True),
+        Binding("left", "button_left", "←:Btn←"),
+        Binding("right", "button_right", "→:Btn→"),
+        Binding("up", "button_up", "↑:Btn↑"),
+        Binding("down", "button_down", "↓:Btn↓"),
         Binding("h,ctrl+left", "previous_tab", "h/Ctrl+←:Ant", priority=True),
         Binding("l,ctrl+right", "next_tab", "l/Ctrl+→:Sig", priority=True),
         Binding("H", "show_history", "H:Hist", priority=True),
@@ -247,13 +256,75 @@ class AnalysisScreen(Screen[None]):
         """Go back to previous screen."""
         self.app.pop_screen()
 
+    def _button_ids(self) -> list[str]:
+        """Return button IDs in visual grid order."""
+        return ["btn-analyze", "btn-clear", "btn-history", "btn-export"]
+
+    def _focused_button_index(self) -> int | None:
+        """Get focused button index if focus is on an action button."""
+        focused = self.focused
+        if not isinstance(focused, Button) or focused.id is None:
+            return None
+        try:
+            return self._button_ids().index(focused.id)
+        except ValueError:
+            return None
+
+    def action_focus_buttons(self) -> None:
+        """Focus first action button."""
+        self.query_one("#btn-analyze", Button).focus()
+
+    def _focus_button_by_index(self, index: int) -> None:
+        """Focus action button by index in the grid order."""
+        button_id = self._button_ids()[index]
+        self.query_one(f"#{button_id}", Button).focus()
+
+    def action_button_left(self) -> None:
+        """Move focus to left button in grid."""
+        idx = self._focused_button_index()
+        if idx is None:
+            self.action_focus_buttons()
+            return
+        if idx % 2 == 1:
+            self._focus_button_by_index(idx - 1)
+
+    def action_button_right(self) -> None:
+        """Move focus to right button in grid."""
+        idx = self._focused_button_index()
+        if idx is None:
+            self.action_focus_buttons()
+            return
+        if idx % 2 == 0:
+            self._focus_button_by_index(idx + 1)
+
+    def action_button_up(self) -> None:
+        """Move focus to upper button in grid."""
+        idx = self._focused_button_index()
+        if idx is None:
+            self.action_focus_buttons()
+            return
+        if idx >= 2:
+            self._focus_button_by_index(idx - 2)
+
+    def action_button_down(self) -> None:
+        """Move focus to lower button in grid."""
+        idx = self._focused_button_index()
+        if idx is None:
+            self.action_focus_buttons()
+            return
+        if idx <= 1:
+            self._focus_button_by_index(idx + 2)
+
     def action_show_history(self) -> None:
         """Show analysis history."""
         history = get_history_manager()
-        if len(history.get_all()) == 0:
+        if len(history.get_all_for_profile(self._profile_name)) == 0:
             self._set_status("[yellow]No hay análisis en el histórico[/yellow]")
         else:
-            self.app.push_screen(HistoryScreen(), self._on_history_selected)
+            self.app.push_screen(
+                HistoryScreen(self._profile_name),
+                self._on_history_selected,
+            )
 
     def action_export(self) -> None:
         """Export analysis to file."""
