@@ -72,8 +72,9 @@ class TestMongoDBExplain:
         report = mongodb_adapter.execute_explain(query)
 
         assert report.engine == "mongodb"
-        assert report.score >= 0
-        assert isinstance(report.warnings, list)
+        assert report.execution_time_ms > 0
+        assert isinstance(report.plan_summary, str)
+        assert isinstance(report.metrics, dict)
 
     def test_explain_collection_scan(self, mongodb_adapter):
         """Query without suitable index → basic explain."""
@@ -83,8 +84,9 @@ class TestMongoDBExplain:
         report = mongodb_adapter.execute_explain(query)
 
         assert report.engine == "mongodb"
-        assert report.score >= 0
-        assert isinstance(report.warnings, list)
+        assert report.execution_time_ms > 0
+        assert isinstance(report.plan_summary, str)
+        assert isinstance(report.metrics, dict)
 
     def test_explain_with_projection(self, mongodb_adapter):
         """Query with projection."""
@@ -99,7 +101,8 @@ class TestMongoDBExplain:
         report = mongodb_adapter.execute_explain(query)
 
         assert report.engine == "mongodb"
-        assert report.score >= 0
+        assert report.execution_time_ms > 0
+        assert report.raw_plan is not None
 
     def test_explain_with_sort(self, mongodb_adapter):
         """Query with sort operation."""

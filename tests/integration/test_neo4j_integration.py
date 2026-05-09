@@ -155,11 +155,10 @@ class TestNeo4jProfileQueries:
         report = populated_graph.execute_explain(query)
 
         assert report.engine == "neo4j"
-        assert report.score >= 0
-        assert report.score <= 100
         assert report.execution_time_ms >= 0
-        assert isinstance(report.warnings, list)
-        assert isinstance(report.recommendations, list)
+        assert report.plan_tree is not None
+        assert isinstance(report.plan_summary, str)
+        assert isinstance(report.metrics, dict)
 
     def test_profile_match_with_filter(self, populated_graph):
         """Execute PROFILE on MATCH with WHERE clause."""
@@ -168,8 +167,8 @@ class TestNeo4jProfileQueries:
         report = populated_graph.execute_explain(query)
 
         assert report.engine == "neo4j"
-        assert report.score >= 0
         assert report.execution_time_ms >= 0
+        assert isinstance(report.metrics, dict)
 
     def test_profile_expand_with_relationship(self, populated_graph):
         """Execute PROFILE on query with relationship expansion."""
@@ -178,8 +177,8 @@ class TestNeo4jProfileQueries:
         report = populated_graph.execute_explain(query)
 
         assert report.engine == "neo4j"
-        assert report.score >= 0
         assert report.execution_time_ms >= 0
+        assert report.plan_tree is not None
 
     def test_profile_multi_hop_expansion(self, populated_graph):
         """Execute PROFILE on multi-hop relationship query."""
@@ -188,7 +187,8 @@ class TestNeo4jProfileQueries:
         report = populated_graph.execute_explain(query)
 
         assert report.engine == "neo4j"
-        assert report.score >= 0
+        assert report.execution_time_ms >= 0
+        assert isinstance(report.metrics, dict)
 
 
 # ============================================================================
@@ -207,8 +207,8 @@ class TestNeo4jAntiPatterns:
         report = populated_graph.execute_explain(query)
 
         assert report.engine == "neo4j"
-        # Cartesian product should be detected and affect score
-        assert report.score >= 0
+        assert report.execution_time_ms >= 0
+        assert report.plan_tree is not None
 
     def test_all_nodes_scan_detection(self, populated_graph):
         """Detect full graph scan (if applicable)."""
@@ -218,7 +218,8 @@ class TestNeo4jAntiPatterns:
         report = populated_graph.execute_explain(query)
 
         assert report.engine == "neo4j"
-        assert report.score >= 0
+        assert report.execution_time_ms >= 0
+        assert isinstance(report.metrics, dict)
 
 
 # ============================================================================

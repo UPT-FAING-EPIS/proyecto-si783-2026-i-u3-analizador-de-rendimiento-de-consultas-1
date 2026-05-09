@@ -95,36 +95,39 @@ class TestRedisAdapterExecuteExplainIntegration:
         assert isinstance(report, QueryAnalysisReport), "Report must be QueryAnalysisReport"
         assert report.engine == "redis", f"Engine should be 'redis', got {report.engine}"
         assert report.query == "KEYS *", f"Query should be 'KEYS *', got {report.query}"
-        assert report.score < 100, f"KEYS * should have score < 100, got {report.score}"
+        assert isinstance(report.metrics, dict)
+        assert report.metrics.get("is_dangerous_command") is True
+        assert report.metrics.get("complexity") == "O(N)"
 
-        # Verify warning and recommendation for SCAN
-        assert len(report.warnings) > 0, "KEYS * should generate at least one warning"
-        recommendations_text = " ".join(rec.title for rec in report.recommendations).upper()
-        assert "SCAN" in recommendations_text, (
-            f"Recommendations should suggest SCAN. Got: {report.recommendations}"
-        )
+        # Verify recommendation signal for SCAN in normalized plan/metrics
+        normalized_plan = report.metrics.get("normalized_plan", {})
+        extra_info = " ".join(normalized_plan.get("extra_info", []))
+        assert "SCAN" in extra_info.upper(), f"Expected SCAN hint. Got: {extra_info}"
 
     def test_execute_explain_smembers_command(self, adapter):
         """Test analysis of SMEMBERS command."""
         report = adapter.execute_explain("SMEMBERS myset")
 
         assert isinstance(report, QueryAnalysisReport)
-        assert report.score < 100
-        assert len(report.recommendations) > 0
+        assert report.metrics.get("is_dangerous_command") is True
+        assert report.metrics.get("complexity") == "O(N)"
 
     def test_execute_explain_safe_get_command(self, adapter):
         """Test analysis of safe GET command."""
         report = adapter.execute_explain("GET mykey")
 
         assert isinstance(report, QueryAnalysisReport)
-        assert report.score == 100  # GET is safe
+        assert report.metrics.get("is_dangerous_command") is False
+        assert report.metrics.get("complexity") == "O(1)"
 
     def test_execute_explain_flushdb_command(self, adapter):
         """Test analysis of dangerous FLUSHDB command."""
         report = adapter.execute_explain("FLUSHDB")
 
-        assert report.score < 100
-        assert any("del" in (rec.title or "").lower() for rec in report.recommendations)
+        assert report.metrics.get("is_dangerous_command") is True
+        normalized_plan = report.metrics.get("normalized_plan", {})
+        extra_info = " ".join(normalized_plan.get("extra_info", []))
+        assert "DESTRUCT" in extra_info.upper() or "DEL" in extra_info.upper()
 
 
 class TestRedisAdapterGetSlowQueriesIntegration:
@@ -277,10 +280,10 @@ class TestRedisAdapterEndToEndIntegration:
 
         # 3. Analyze commands
         keys_report = adapter.execute_explain("KEYS *")
-        assert keys_report.score < 100
+        assert keys_report.metrics.get("is_dangerous_command") is True
 
         get_report = adapter.execute_explain("GET mykey")
-        assert get_report.score == 100
+        assert get_report.metrics.get("is_dangerous_command") is False
 
         # 4. Get metrics
         metrics = adapter.get_metrics()
@@ -299,10 +302,9 @@ class TestRedisAdapterEndToEndIntegration:
 
         for cmd in dangerous_commands:
             report = adapter.execute_explain(cmd)
-            # All these should have low scores
-            assert report.score < 100, f"Command {cmd} should have low score"
-            # All should have warnings
-            assert len(report.warnings) > 0, f"Command {cmd} should have warnings"
+            assert report.metrics.get("is_dangerous_command") is True, (
+                f"Command {cmd} should be detected as dangerous"
+            )
 
     def test_safe_commands_consistency(self, adapter):
         """Test that safe commands maintain high scores."""
@@ -316,10 +318,9 @@ class TestRedisAdapterEndToEndIntegration:
 
         for cmd in safe_commands:
             report = adapter.execute_explain(cmd)
-            # All these should have high scores
-            assert report.score == 100, f"Command {cmd} should have score 100"
-            # Safe commands should have no warnings
-            assert len(report.warnings) == 0, f"Command {cmd} should have no warnings"
+            assert report.metrics.get("is_dangerous_command") is False, (
+                f"Command {cmd} should be detected as safe"
+            )
 
 
 class TestRedisAdapterClusterDetection:

@@ -121,36 +121,22 @@ class TestInfluxDBIntegrationConnection:
 
 
 class TestInfluxDBIntegrationQueryAnalysis:
-    """Flux query analysis and anti-pattern detection tests."""
+    """Flux query analysis tests validating v2 report contract."""
 
     def test_unbounded_query_detection(self, influxdb_adapter: InfluxDBAdapter) -> None:
-        """Detect unbounded query (no time filter) - CRITICAL warning.
-
-        Unbounded queries (missing range()) perform full bucket scans and
-        should receive the maximum penalty (-30 points).
-        """
-        # Query without range() - should get critical warning
+        """Query without range() is reflected in normalized plan metadata."""
         flux_query = 'from(bucket:"metrics") |> filter(fn: (r) => r._measurement == "cpu")'
 
         report = influxdb_adapter.execute_explain(flux_query)
 
-        # Score should be heavily penalized
-        assert report.score < 100, "Unbounded query should reduce score"
-        assert report.score <= 70, f"Expected score <= 70, got {report.score}"
-
-        # Should have warning about time filter
-        assert any(
-            "time filter" in (w.message or "").lower() or "unbounded" in (w.message or "").lower()
-            for w in report.warnings
-        ), f"Expected time filter warning, got: {report.warnings}"
-
-        # Should recommend adding time filter
-        assert any("range" in (r.title or "").lower() for r in report.recommendations), (
-            f"Expected range recommendation, got: {report.recommendations}"
-        )
+        flux_metadata = report.raw_plan.get("flux_metadata", {}) if report.raw_plan else {}
+        assert report.engine == "influxdb"
+        assert report.execution_time_ms > 0
+        assert flux_metadata.get("has_time_filter") is False
+        assert isinstance(report.metrics, dict)
 
     def test_bounded_query_high_score(self, influxdb_adapter: InfluxDBAdapter) -> None:
-        """Well-formed query with time filter should have high score."""
+        """Query with range() is reflected as time-bounded in metadata."""
         flux_query = (
             'from(bucket:"metrics") '
             "|> range(start: -1h, stop: now()) "
@@ -159,16 +145,12 @@ class TestInfluxDBIntegrationQueryAnalysis:
 
         report = influxdb_adapter.execute_explain(flux_query)
 
-        # Should have high score (no unbounded warning)
-        assert report.score == 100, f"Expected score 100, got {report.score}"
-
-        # Should NOT have unbounded warning
-        assert not any("unbounded" in (w.message or "").lower() for w in report.warnings), (
-            f"Should have no unbounded warning, got: {report.warnings}"
-        )
+        flux_metadata = report.raw_plan.get("flux_metadata", {}) if report.raw_plan else {}
+        assert flux_metadata.get("has_time_filter") is True
+        assert report.execution_time_ms > 0
 
     def test_high_cardinality_group_by_detection(self, influxdb_adapter: InfluxDBAdapter) -> None:
-        """Detect high-cardinality group-by (>10 columns)."""
+        """Group-by columns are preserved in normalized Flux metadata."""
         # Simulate many group-by columns (>10)
         columns_list = (
             '["col1", "col2", "col3", "col4", "col5", "col6", "col7", '
@@ -182,17 +164,11 @@ class TestInfluxDBIntegrationQueryAnalysis:
 
         report = influxdb_adapter.execute_explain(flux_query)
 
-        # Should have cardinality warning
-        assert any(
-            "cardinality" in (w.message or "").lower() or "group" in (w.message or "").lower()
-            for w in report.warnings
-        ), f"Expected cardinality warning, got: {report.warnings}"
-
-        # Score should be reduced
-        assert report.score < 100
+        flux_metadata = report.raw_plan.get("flux_metadata", {}) if report.raw_plan else {}
+        assert len(flux_metadata.get("group_by_columns", [])) == 11
 
     def test_excessive_transformations_detection(self, influxdb_adapter: InfluxDBAdapter) -> None:
-        """Detect excessive map/reduce operations (>5)."""
+        """Transformation count is preserved in normalized Flux metadata."""
         flux_query = (
             'from(bucket:"metrics") '
             "|> range(start: -1h, stop: now()) "
@@ -206,10 +182,8 @@ class TestInfluxDBIntegrationQueryAnalysis:
 
         report = influxdb_adapter.execute_explain(flux_query)
 
-        # Should recommend simplification
-        assert any("simplif" in (rec.title or "").lower() for rec in report.recommendations), (
-            f"Expected simplification recommendation, got: {report.recommendations}"
-        )
+        flux_metadata = report.raw_plan.get("flux_metadata", {}) if report.raw_plan else {}
+        assert flux_metadata.get("transformation_count", 0) >= 6
 
     def test_invalid_flux_syntax_raises_error(self, influxdb_adapter: InfluxDBAdapter) -> None:
         """Invalid Flux query raises QueryAnalysisError."""
@@ -234,10 +208,8 @@ class TestInfluxDBIntegrationQueryAnalysis:
         # Verify report structure
         assert report.engine == "influxdb"
         assert report.query == flux_query
-        assert 0 <= report.score <= 100
         assert report.execution_time_ms >= 0
-        assert isinstance(report.warnings, list)
-        assert isinstance(report.recommendations, list)
+        assert isinstance(report.plan_summary, str)
         assert report.raw_plan is not None
         assert isinstance(report.metrics, dict)
 

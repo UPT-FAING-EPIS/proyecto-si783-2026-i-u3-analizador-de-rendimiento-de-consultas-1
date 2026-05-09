@@ -67,7 +67,8 @@ class TestMSSQLAdapterExplain:
     def test_simple_select(self, mssql_adapter) -> None:
         report = mssql_adapter.execute_explain("SELECT * FROM sys.objects WHERE type = 'U'")
         assert report.engine == "mssql"
-        assert 0 <= report.score <= 100
+        assert report.execution_time_ms > 0
+        assert isinstance(report.plan_summary, str)
         assert report.plan_tree is not None
 
     def test_rejects_ddl(self, mssql_adapter) -> None:

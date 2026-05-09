@@ -40,17 +40,21 @@ class TestElasticsearchAdapterIntegration:
         assert es_adapter.test_connection()
 
     def test_execute_explain_match_all_query(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test explain on match_all query."""
+        """Test explain on match_all query (v2 contract)."""
         query = json.dumps({"match_all": {}})
         report = es_adapter.execute_explain(query)
 
         assert report.engine == "elasticsearch"
-        assert report.query is not None
-        # Should detect full index scan anti-pattern
-        assert any(w.severity in ["high", "critical"] for w in report.warnings)
+        assert report.query == query
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)
+        assert "took" in report.metrics
+        assert "query_type" in report.metrics
+        assert "has_filter" in report.metrics
+        assert "timed_out" in report.metrics
 
     def test_execute_explain_bool_query_with_filter(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test explain on bool query with filter."""
+        """Test explain on bool query with filter (v2 contract)."""
         query = json.dumps(
             {
                 "bool": {
@@ -62,30 +66,31 @@ class TestElasticsearchAdapterIntegration:
         report = es_adapter.execute_explain(query)
 
         assert report.engine == "elasticsearch"
-        # Should have fewer warnings since it has filters
-        full_scan_warnings = [w for w in report.warnings if w.severity == "critical"]
-        assert len(full_scan_warnings) == 0
+        assert report.query == query
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)
+        assert "has_filter" in report.metrics
 
     def test_execute_explain_wildcard_query(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test explain on wildcard query."""
+        """Test explain on wildcard query (v2 contract)."""
         query = json.dumps({"wildcard": {"title": {"value": "test*"}}})
         report = es_adapter.execute_explain(query)
 
         assert report.engine == "elasticsearch"
-        # Should detect wildcard anti-pattern
-        assert any(w.severity in ["high", "medium"] for w in report.warnings)
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)
 
     def test_execute_explain_nested_wildcard_query(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test explain on nested wildcard query."""
+        """Test explain on nested wildcard query (v2 contract)."""
         query = json.dumps({"bool": {"must": [{"wildcard": {"field": {"value": "value*"}}}]}})
         report = es_adapter.execute_explain(query)
 
         assert report.engine == "elasticsearch"
-        # Should detect nested wildcard
-        assert any(w.severity in ["high", "medium"] for w in report.warnings)
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)
 
     def test_execute_explain_script_score_query(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test explain on script_score query."""
+        """Test explain on script_score query (v2 contract)."""
         query = json.dumps(
             {
                 "script_score": {
@@ -97,20 +102,17 @@ class TestElasticsearchAdapterIntegration:
         report = es_adapter.execute_explain(query)
 
         assert report.engine == "elasticsearch"
-        # Should detect script in query
-        assert any(w.severity in ["high", "medium"] for w in report.warnings)
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)
 
     def test_execute_explain_term_query(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test explain on term query (good practice)."""
+        """Test explain on term query (v2 contract)."""
         query = json.dumps({"term": {"status": {"value": "published"}}})
         report = es_adapter.execute_explain(query)
 
         assert report.engine == "elasticsearch"
-        # Term query is efficient, should have minimal warnings
-        script_warnings = [w for w in report.warnings if w.severity == "high"]
-        wildcard_warnings = [w for w in report.warnings if w.severity == "high"]
-        assert len(script_warnings) == 0
-        assert len(wildcard_warnings) == 0
+        assert report.query == query
+        assert report.execution_time_ms > 0
 
     def test_get_metrics(self, es_adapter: ElasticsearchAdapter) -> None:
         """Test getting cluster metrics."""
@@ -140,32 +142,34 @@ class TestElasticsearchAdapterIntegration:
         assert es_adapter.is_connected()
 
     def test_score_calculation_no_warnings(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test that query with no warnings gets high score."""
+        """Test term query returns stable v2 fields."""
         query = json.dumps({"term": {"status": {"value": "published"}}})
         report = es_adapter.execute_explain(query)
 
-        # Query with no anti-patterns should have high score
-        assert report.score >= 85
+        assert report.engine == "elasticsearch"
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)
 
     def test_score_calculation_with_warnings(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test that query with warnings gets lower score."""
+        """Test match_all query returns stable v2 fields."""
         query = json.dumps({"match_all": {}})
         report = es_adapter.execute_explain(query)
 
-        # Query with full_index_scan should have lower score
-        assert report.score < 90
+        assert report.engine == "elasticsearch"
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)
 
     def test_recommendations_provided(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test that recommendations are provided for anti-patterns."""
+        """Test report exposes v2 metadata fields."""
         query = json.dumps({"match_all": {}})
         report = es_adapter.execute_explain(query)
 
-        assert len(report.recommendations) > 0
-        # Should have recommendation for adding filters to match_all query
-        assert any("filter" in r.title.lower() for r in report.recommendations)
+        assert report.analyzed_at is not None
+        assert isinstance(report.plan_summary, str)
+        assert isinstance(report.metrics, dict)
 
     def test_multiple_anti_patterns_detected(self, es_adapter: ElasticsearchAdapter) -> None:
-        """Test detecting multiple anti-patterns in one query."""
+        """Test complex query returns valid v2 report structure."""
         query = json.dumps(
             {
                 "bool": {
@@ -183,6 +187,6 @@ class TestElasticsearchAdapterIntegration:
         )
         report = es_adapter.execute_explain(query)
 
-        # Should detect multiple anti-patterns
-        warning_severities = {w.severity for w in report.warnings}
-        assert len(warning_severities) >= 1
+        assert report.engine == "elasticsearch"
+        assert report.execution_time_ms > 0
+        assert isinstance(report.metrics, dict)

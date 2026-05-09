@@ -97,6 +97,14 @@ class TestMySQLIntegrationConnection:
 
     def test_invalid_credentials_raises_error(self, docker_mysql_config: ConnectionConfig) -> None:
         """Invalid credentials raise descriptive error."""
+        # If service is not reachable, skip instead of asserting auth semantics.
+        probe_adapter = MySQLAdapter(docker_mysql_config)
+        try:
+            probe_adapter.connect()
+            probe_adapter.disconnect()
+        except Exception as e:
+            pytest.skip(f"Docker MySQL not reachable for auth test: {e}")
+
         bad_config = ConnectionConfig(
             engine="mysql",
             host="localhost",
