@@ -92,6 +92,7 @@ class ProfileSelector(Container):
         if not profiles:
             self._selected_profile = None
             table.add_row("-", "No hay perfiles", "", "desconectado")
+            self._update_analyze_button_state()
             return
 
         selected_name = self._selected_profile or default_name or next(iter(profiles))
@@ -114,6 +115,7 @@ class ProfileSelector(Container):
 
         table.move_cursor(row=selected_row_index, column=0)
         self._selected_profile = selected_name
+        self._update_analyze_button_state()
 
     def _format_status(self, status: ConnectionStatus | None) -> str:
         if status is None or status == ConnectionStatus.DISCONNECTED:
@@ -137,11 +139,13 @@ class ProfileSelector(Container):
         if event.row_key is None:
             return
         self._selected_profile = str(event.row_key.value)
+        self._update_analyze_button_state()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.row_key is None:
             return
         self._selected_profile = str(event.row_key.value)
+        self._update_analyze_button_state()
         self.post_message(ProfileAction("analyze", self._selected_profile))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -171,3 +175,17 @@ class ProfileSelector(Container):
 
     def reload_profiles(self) -> None:
         self._refresh_profile_list()
+
+    def _update_analyze_button_state(self) -> None:
+        try:
+            analyze_button = self.query_one("#btn-analyze", Button)
+        except Exception:
+            return
+
+        analyze_button.disabled = not self._is_selected_profile_connected()
+
+    def _is_selected_profile_connected(self) -> bool:
+        if not self._selected_profile:
+            return False
+
+        return self._manager.status_for_profile(self._selected_profile) == ConnectionStatus.CONNECTED

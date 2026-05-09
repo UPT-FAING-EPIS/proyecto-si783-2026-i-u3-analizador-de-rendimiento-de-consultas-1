@@ -124,6 +124,26 @@ class ConnectionScreen(Container):
         elif action == "delete" and profile_name:
             self._delete_profile(profile_name)
         elif action == "analyze" and profile_name:
+            profile_status = self._manager.status_for_profile(profile_name)
+            status_bar = self.query_one("#status-bar", StatusBar)
+
+            if profile_status != ConnectionStatus.CONNECTED:
+                if profile_status == ConnectionStatus.CONNECTING:
+                    status_bar.update(
+                        f"[yellow]El perfil '{profile_name}' aun se esta conectando[/yellow]"
+                    )
+                elif profile_status == ConnectionStatus.ERROR:
+                    status_bar.update(
+                        f"[red]El perfil '{profile_name}' tiene estado error."
+                        " Solo se puede analizar con estado conectado[/red]"
+                    )
+                else:
+                    status_bar.update(
+                        f"[yellow]El perfil '{profile_name}' esta desconectado."
+                        " Solo se puede analizar con estado conectado[/yellow]"
+                    )
+                return
+
             self.app.push_screen(AnalysisScreen(profile_name))
 
     def _on_form_return(self, saved: bool | None) -> None:
