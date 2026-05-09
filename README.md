@@ -70,11 +70,10 @@ qa --help
 En cada tag `v*` se publican estos artefactos:
 
 - `qa-linux-amd64.tar.gz`
-- `qa-linux-arm64.tar.gz`
 - `qa-macos-arm64.zip`
 - `qa-windows-amd64.zip`
 
-#### Linux (amd64/arm64)
+#### Linux (amd64)
 
 ```bash
 tar -xzf qa-linux-amd64.tar.gz
@@ -82,8 +81,6 @@ chmod +x qa
 sudo mv qa /usr/local/bin/qa
 qa --help
 ```
-
-Para ARM64, reemplaza el archivo por `qa-linux-arm64.tar.gz`.
 
 #### macOS (arm64)
 

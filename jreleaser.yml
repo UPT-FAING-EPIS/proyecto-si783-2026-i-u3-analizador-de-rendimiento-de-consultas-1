@@ -39,8 +39,6 @@ distributions:
     artifacts:
       - path: dist/qa-linux-amd64.tar.gz
         platform: linux-x86_64
-      - path: dist/qa-linux-arm64.tar.gz
-        platform: linux-aarch_64
       - path: dist/qa-macos-arm64.zip
         platform: osx-aarch_64
       - path: dist/qa-windows-amd64.zip
@@ -88,5 +86,3 @@ packagers:
     architectures:
       - buildOn: [amd64]
         runOn: [amd64]
-      - buildOn: [arm64]
-        runOn: [arm64]
