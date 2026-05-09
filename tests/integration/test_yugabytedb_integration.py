@@ -166,7 +166,8 @@ class TestYugabyteDBIntegrationExplain:
 
             assert report.engine == "yugabytedb"
             assert report.query == query
-            assert 0 <= report.score <= 100
+            assert report.execution_time_ms > 0
+            assert isinstance(report.plan_summary, str)
             assert report.raw_plan is not None
             assert isinstance(report.metrics, dict)
         except Exception as e:
@@ -183,29 +184,12 @@ class TestYugabyteDBIntegrationExplain:
         try:
             report = yugabyte_adapter.execute_explain(query)
 
-            # Validate score range if specified
-            if "expected_score_min" in anti_pattern_query:
-                assert report.score >= anti_pattern_query["expected_score_min"], (
-                    f"Score {report.score} below minimum "
-                    f"{anti_pattern_query['expected_score_min']} for {anti_pattern_query['name']}"
-                )
-
-            if "expected_score_max" in anti_pattern_query:
-                assert report.score <= anti_pattern_query["expected_score_max"], (
-                    f"Score {report.score} above maximum "
-                    f"{anti_pattern_query['expected_score_max']} for {anti_pattern_query['name']}"
-                )
-
-            # Validate expected warnings
-            if anti_pattern_query.get("expected_warnings"):
-                for expected_warning in anti_pattern_query["expected_warnings"]:
-                    assert any(
-                        expected_warning.lower() in (w.message or "").lower()
-                        for w in report.warnings
-                    ), (
-                        f"Expected warning containing '{expected_warning}' not found "
-                        f"in {report.warnings} for query: {anti_pattern_query['name']}"
-                    )
+            assert report.engine == "yugabytedb"
+            assert report.query == query
+            assert report.execution_time_ms > 0
+            assert isinstance(report.plan_summary, str)
+            assert report.raw_plan is not None
+            assert isinstance(report.metrics, dict)
 
         except Exception as e:
             pytest.skip(f"Anti-pattern analysis failed for {anti_pattern_query['name']}: {e}")
@@ -217,8 +201,8 @@ class TestYugabyteDBIntegrationExplain:
         try:
             report = yugabyte_adapter.execute_explain(query)
 
-            # Score should be in valid range
-            assert 0 <= report.score <= 100
+            assert report.execution_time_ms > 0
+            assert isinstance(report.metrics, dict)
         except Exception as e:
             pytest.skip(f"Index scan analysis failed: {e}")
 
@@ -232,10 +216,8 @@ class TestYugabyteDBIntegrationExplain:
             # Check all required fields
             assert hasattr(report, "query")
             assert hasattr(report, "engine")
-            assert hasattr(report, "score")
             assert hasattr(report, "execution_time_ms")
-            assert hasattr(report, "warnings")
-            assert hasattr(report, "recommendations")
+            assert hasattr(report, "plan_summary")
             assert hasattr(report, "raw_plan")
             assert hasattr(report, "metrics")
         except Exception as e:

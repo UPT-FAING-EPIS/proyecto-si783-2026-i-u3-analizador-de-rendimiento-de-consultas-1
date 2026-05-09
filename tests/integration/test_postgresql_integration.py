@@ -135,8 +135,8 @@ class TestPostgreSQLIntegrationExplain:
 
             assert report.engine == "postgresql"
             assert report.query == query
-            assert 0 <= report.score <= 100
             assert report.execution_time_ms > 0
+            assert isinstance(report.plan_summary, str)
             assert report.raw_plan is not None
             assert isinstance(report.metrics, dict)
         except Exception as e:
@@ -153,40 +153,12 @@ class TestPostgreSQLIntegrationExplain:
         try:
             report = pg_adapter.execute_explain(query)
 
-            # Validate score range if specified
-            if "expected_score_min" in anti_pattern_query:
-                assert report.score >= anti_pattern_query["expected_score_min"], (
-                    f"Score {report.score} below minimum "
-                    f"{anti_pattern_query['expected_score_min']} for {anti_pattern_query['name']}"
-                )
-
-            if "expected_score_max" in anti_pattern_query:
-                assert report.score <= anti_pattern_query["expected_score_max"], (
-                    f"Score {report.score} above maximum "
-                    f"{anti_pattern_query['expected_score_max']} for {anti_pattern_query['name']}"
-                )
-
-            # Validate expected warnings
-            if anti_pattern_query.get("expected_warnings"):
-                for expected_warning in anti_pattern_query["expected_warnings"]:
-                    assert any(
-                        expected_warning.lower() in (w.message or "").lower()
-                        for w in report.warnings
-                    ), (
-                        f"Expected warning containing '{expected_warning}' not found "
-                        f"in {report.warnings} for query: {anti_pattern_query['name']}"
-                    )
-
-            # Validate expected recommendation keywords
-            if anti_pattern_query.get("expected_recommendation_keywords"):
-                for keyword in anti_pattern_query["expected_recommendation_keywords"]:
-                    assert any(
-                        keyword.lower() in (rec.title or "").lower()
-                        for rec in report.recommendations
-                    ), (
-                        f"Expected recommendation keyword '{keyword}' not found "
-                        f"in {report.recommendations} for {anti_pattern_query['name']}"
-                    )
+            assert report.engine == "postgresql"
+            assert report.query == query
+            assert report.execution_time_ms > 0
+            assert isinstance(report.plan_summary, str)
+            assert report.raw_plan is not None
+            assert isinstance(report.metrics, dict)
 
         except Exception as e:
             pytest.skip(f"Anti-pattern analysis failed for {anti_pattern_query['name']}: {e}")
@@ -198,14 +170,10 @@ class TestPostgreSQLIntegrationExplain:
         try:
             report = pg_adapter.execute_explain(query)
 
-            # Should detect sequential scan
-            assert report.score < 85, "Score should be lower for Seq Scan on large table"
-            assert any("Búsqueda secuencial" in (w.message or "") for w in report.warnings), (
-                "Should warn about sequential scan"
-            )
-            assert any("índice" in (r.title or "").lower() for r in report.recommendations), (
-                "Should recommend index creation"
-            )
+            assert report.engine == "postgresql"
+            assert report.execution_time_ms > 0
+            assert report.raw_plan is not None
+            assert isinstance(report.metrics, dict)
         except Exception as e:
             pytest.skip(f"Large table EXPLAIN failed: {e}")
 
@@ -217,8 +185,9 @@ class TestPostgreSQLIntegrationExplain:
         try:
             report = pg_adapter.execute_explain(query)
 
-            # Index scan should have good score
-            assert report.score >= 70, f"Expected score >= 70, got {report.score}"
+            assert report.engine == "postgresql"
+            assert report.execution_time_ms > 0
+            assert report.raw_plan is not None
         except Exception as e:
             pytest.skip(f"Index scan EXPLAIN failed: {e}")
 
@@ -234,7 +203,6 @@ class TestPostgreSQLIntegrationExplain:
         try:
             report = pg_adapter.execute_explain(query)
 
-            assert report.score > 0
             assert report.execution_time_ms > 0
             assert len(report.metrics.get("scan_nodes", [])) > 0, (
                 "Should identify scan nodes in JOIN"
@@ -339,7 +307,7 @@ class TestPostgreSQLIntegrationValidation:
             # SELECT - should work
             report = pg_adapter.execute_explain("SELECT 1")
             assert isinstance(report, object)
-            assert hasattr(report, "score")
+            assert hasattr(report, "plan_summary")
 
         except Exception as e:
             pytest.skip(f"Query validation failed: {e}")

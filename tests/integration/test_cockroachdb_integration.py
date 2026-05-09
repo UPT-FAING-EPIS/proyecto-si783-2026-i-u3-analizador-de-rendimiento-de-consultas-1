@@ -217,8 +217,8 @@ class TestCockroachDBIntegrationExplain:
 
             assert report.engine == "cockroachdb"
             assert report.query == query
-            assert 0 <= report.score <= 100
-            assert isinstance(report.warnings, list)
+            assert report.execution_time_ms > 0
+            assert isinstance(report.plan_summary, str)
             assert report.raw_plan is not None
         except Exception as e:
             pytest.skip(f"EXPLAIN analysis failed: {e}")
@@ -235,35 +235,12 @@ class TestCockroachDBIntegrationExplain:
         try:
             report = crdb_adapter.execute_explain(query)
 
-            # Validate score range if specified
-            if "expected_score_min" in anti_pattern_query:
-                assert report.score >= anti_pattern_query["expected_score_min"], (
-                    f"Score {report.score} below minimum "
-                    f"{anti_pattern_query['expected_score_min']} for {anti_pattern_query['name']}"
-                )
-
-            if "expected_score_max" in anti_pattern_query:
-                assert report.score <= anti_pattern_query["expected_score_max"], (
-                    f"Score {report.score} above maximum "
-                    f"{anti_pattern_query['expected_score_max']} for {anti_pattern_query['name']}"
-                )
-
-            # Validate expected warnings (flexible for CRDB)
-            if anti_pattern_query.get("expected_warnings"):
-                # Just check that warnings are present, not the exact keywords
-                # (CRDB may detect different anti-patterns)
-                pass
-
-            # Validate expected recommendation keywords
-            if anti_pattern_query.get("expected_recommendation_keywords"):
-                for keyword in anti_pattern_query["expected_recommendation_keywords"]:
-                    assert any(
-                        keyword.lower() in (rec.title or "").lower()
-                        for rec in report.recommendations
-                    ), (
-                        f"Expected recommendation keyword '{keyword}' not found "
-                        f"in {report.recommendations} for {anti_pattern_query['name']}"
-                    )
+            assert report.engine == "cockroachdb"
+            assert report.query == query
+            assert report.execution_time_ms > 0
+            assert isinstance(report.plan_summary, str)
+            assert report.raw_plan is not None
+            assert isinstance(report.metrics, dict)
 
         except Exception as e:
             pytest.skip(f"Anti-pattern analysis failed for {anti_pattern_query['name']}: {e}")
@@ -278,8 +255,8 @@ class TestCockroachDBIntegrationExplain:
             report = crdb_adapter.execute_explain(query)
 
             assert report.engine == "cockroachdb"
-            assert 0 <= report.score <= 100
-            assert isinstance(report.recommendations, list)
+            assert report.execution_time_ms > 0
+            assert isinstance(report.plan_summary, str)
         except Exception as e:
             pytest.skip(f"Table query failed: {e}")
 
@@ -295,33 +272,32 @@ class TestCockroachDBIntegrationExplain:
             # Check all required fields
             assert hasattr(report, "query")
             assert hasattr(report, "engine")
-            assert hasattr(report, "score")
             assert hasattr(report, "execution_time_ms")
-            assert hasattr(report, "warnings")
-            assert hasattr(report, "recommendations")
+            assert hasattr(report, "plan_summary")
             assert hasattr(report, "raw_plan")
             assert hasattr(report, "metrics")
         except Exception as e:
             pytest.skip(f"Report fields check failed: {e}")
 
-    def test_explain_score_reproducible(
+    def test_explain_report_reproducible(
         self, crdb_adapter: CockroachDBAdapter, crdb_test_tables: None
     ) -> None:
-        """Same query produces same score (reproducibility test)."""
+        """Same query produces consistent report identity fields."""
         query = "SELECT 1"
 
         try:
             report1 = crdb_adapter.execute_explain(query)
             report2 = crdb_adapter.execute_explain(query)
 
-            assert report1.score == report2.score, "Score must be reproducible"
+            assert report1.engine == report2.engine
+            assert report1.query == report2.query
         except Exception as e:
             pytest.skip(f"Reproducibility test failed: {e}")
 
-    def test_explain_different_queries_different_scores(
+    def test_explain_different_queries_return_reports(
         self, crdb_adapter: CockroachDBAdapter, crdb_test_tables: None
     ) -> None:
-        """Different queries can produce different scores."""
+        """Different queries return valid reports independently."""
         query1 = "SELECT 1"
         query2 = "SELECT * FROM customers"
 
@@ -329,9 +305,10 @@ class TestCockroachDBIntegrationExplain:
             report1 = crdb_adapter.execute_explain(query1)
             report2 = crdb_adapter.execute_explain(query2)
 
-            # Scores can be same by coincidence, but should be independently calculated
-            assert isinstance(report1.score, (int, float))
-            assert isinstance(report2.score, (int, float))
+            assert report1.query == query1
+            assert report2.query == query2
+            assert isinstance(report1.metrics, dict)
+            assert isinstance(report2.metrics, dict)
         except Exception as e:
             pytest.skip(f"Different scores test failed: {e}")
 
