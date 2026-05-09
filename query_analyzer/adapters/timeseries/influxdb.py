@@ -10,12 +10,8 @@ from query_analyzer.adapters.exceptions import (
     ConnectionError as AdapterConnectionError,
 )
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.migration_helpers import (
-    detection_result_to_warnings_and_recommendations,
-)
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .influxdb_parser import InfluxDBFluxParser
 
@@ -240,29 +236,26 @@ class InfluxDBAdapter(BaseAdapter):
             # STEP 4: NORMALIZATION
             normalized_plan = self.parser.normalize_plan(parsed)
 
-            # STEP 5: ANTI-PATTERN DETECTION
-            detector = AntiPatternDetector()
-            detection_result = detector.analyze_influxdb_patterns(normalized_plan, query)
-
-            # Convert anti-patterns to v2 Warning/Recommendation objects
-            warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                detection_result
-            )
-            score = detection_result.score
+            # STEP 5: NO ANTI-PATTERN DETECTION
+            # Analysis only via execution metrics (v2.0.0)
+            warnings = []
+            recommendations = []
 
             # Ensure execution_time_ms is > 0
             if execution_time_ms <= 0:
                 execution_time_ms = 0.1
 
-            # STEP 6: REPORT BUILDING
+            # Generate simple plan summary
+            plan_summary = self._summarize_plan(parsed)
+
+            # STEP 6: REPORT BUILDING (no score, no anti-patterns)
             return QueryAnalysisReport(
                 engine="influxdb",
                 query=query,
-                score=score,
                 execution_time_ms=execution_time_ms,
-                warnings=warnings,
-                recommendations=recommendations,
                 plan_tree=None,  # Flux pipelines are sequential, not tree-structured
+                plan_summary=plan_summary,
+                ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                 analyzed_at=datetime.now(UTC),
                 raw_plan=normalized_plan,
                 metrics=metrics,
@@ -272,6 +265,21 @@ class InfluxDBAdapter(BaseAdapter):
             raise
         except Exception as e:
             raise QueryAnalysisError(f"Failed to analyze Flux query: {e}") from e
+
+    def _summarize_plan(self, parsed: dict[str, Any]) -> str:
+        """Genera un resumen simple del plan de ejecución InfluxDB.
+
+        Args:
+            parsed: Parsed query dict
+
+        Returns:
+            Cadena con resumen simple (ej: "Flux pipeline")
+        """
+        pipes = parsed.get("pipes", [])
+        if pipes:
+            first_op = pipes[0] if isinstance(pipes, list) else "from"
+            return f"Flux: {first_op} | ... ({len(pipes)} ops)"
+        return "Flux query"
 
     def _extract_metrics_from_response(self, response: str) -> dict[str, Any]:
         """Extract metrics from InfluxDB CSV response.

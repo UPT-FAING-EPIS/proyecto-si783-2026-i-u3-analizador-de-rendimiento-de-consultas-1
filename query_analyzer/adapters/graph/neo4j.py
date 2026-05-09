@@ -16,12 +16,8 @@ from query_analyzer.adapters.exceptions import (
     ConnectionError as AdapterConnectionError,
 )
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.migration_helpers import (
-    detection_result_to_warnings_and_recommendations,
-)
 from query_analyzer.adapters.models import ConnectionConfig, PlanNode, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .neo4j_metrics import Neo4jMetricsHelper
 from .neo4j_parser import Neo4jExplainParser
@@ -186,35 +182,25 @@ class Neo4jAdapter(BaseAdapter):
                 metrics = self.parser.parse(profile_info)
                 metrics["execution_time_ms"] = execution_time_ms
 
-                # Normalize plan for AntiPatternDetector
-                plan_root = profile_info.get("profile", {}).get("plan", {})
-                normalized_plan = self.parser.normalize_plan(plan_root)
-
-                # Analyze with AntiPatternDetector
-                detector = AntiPatternDetector()
-                detection_result = detector.analyze(normalized_plan, query)
-
-                # Convert to v2 models using migration helper
-                warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                    detection_result
-                )
-
                 # Build PlanNode tree from Neo4j plan
+                plan_root = profile_info.get("profile", {}).get("plan", {})
                 plan_tree = self._build_plan_tree_from_neo4j(plan_root)
+
+                # Generate simple plan summary
+                plan_summary = self._summarize_plan(plan_root)
 
                 # Ensure execution_time_ms is valid
                 if execution_time_ms <= 0:
                     execution_time_ms = 1.0
 
-                # Build v2 report
+                # Build v2 report (no score, no anti-patterns)
                 return QueryAnalysisReport(
                     engine="neo4j",
                     query=query,
-                    score=detection_result.score,
                     execution_time_ms=execution_time_ms,
-                    warnings=warnings,
-                    recommendations=recommendations,
                     plan_tree=plan_tree,
+                    plan_summary=plan_summary,
+                    ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                     analyzed_at=datetime.now(UTC),
                     raw_plan=profile_info,
                     metrics=metrics,
@@ -224,6 +210,27 @@ class Neo4jAdapter(BaseAdapter):
             raise
         except Exception as e:
             raise QueryAnalysisError(f"Failed to analyze query with PROFILE: {e}") from e
+
+    def _summarize_plan(self, plan_root: dict[str, Any]) -> str:
+        """Genera un resumen simple del plan de ejecución Neo4j.
+
+        Args:
+            plan_root: Root operator from PROFILE result
+
+        Returns:
+            Cadena con resumen simple (ej: "NodeIndexSeek")
+        """
+        if not plan_root:
+            return "Unknown plan"
+
+        operator_type = plan_root.get("operatorType", "Unknown")
+        rows = plan_root.get("rows", 0)
+        
+        summary = f"{operator_type}"
+        if rows > 0:
+            summary += f" ({rows} rows)"
+        
+        return summary
 
     def _build_plan_tree_from_neo4j(self, plan_root: dict[str, Any]) -> PlanNode | None:
         """Build PlanNode tree from Neo4j profile plan.

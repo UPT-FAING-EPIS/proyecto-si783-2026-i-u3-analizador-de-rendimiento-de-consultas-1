@@ -1,0 +1,450 @@
+"""History screen for browsing past query analyses."""
+
+from __future__ import annotations
+
+from textual import on
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from textual.screen import Screen
+from textual.widgets import Button, Footer, Input, Static
+
+from query_analyzer.tui.history_manager import AnalysisRecord, get_history_manager
+from query_analyzer.tui.widgets import (
+    AIInsightsPanel,
+    MetricsPanel,
+    PlanTreeWidget,
+    QuerySummary,
+)
+
+
+class HistoryScreen(Screen[AnalysisRecord | None]):
+    """Screen for browsing and managing query analysis history.
+
+    Layout:
+    - Top: Search box and filters
+    - Main area (horizontal split):
+      - Left: History list
+      - Right: Detailed view of selected analysis
+    """
+
+    BINDINGS = [
+        ("escape", "go_back", "Volver"),
+        ("j", "select_next", "Siguiente"),
+        ("k", "select_previous", "Anterior"),
+        ("g", "select_first", "Inicio"),
+        ("shift+g", "select_last", "Fin"),
+        ("down", "select_next", "Siguiente"),
+        ("up", "select_previous", "Anterior"),
+        ("delete", "delete_selected", "Borrar"),
+        ("c", "clear_history", "Limpiar"),
+        ("enter", "load_selected", "Cargar"),
+        ("q", "quit", "Salir"),
+    ]
+
+    DEFAULT_CSS = """
+    HistoryScreen {
+        background: $background;
+    }
+
+    HistoryScreen #history-root {
+        layout: vertical;
+        height: 1fr;
+        width: 1fr;
+        padding: 0 1;
+    }
+
+    HistoryScreen #header {
+        height: auto;
+        margin-bottom: 1;
+    }
+
+    HistoryScreen .header-title {
+        width: 100%;
+        text-style: bold;
+        color: $primary;
+        margin-bottom: 1;
+    }
+
+    HistoryScreen #search-box {
+        width: 1fr;
+        height: auto;
+        margin-bottom: 1;
+    }
+
+    HistoryScreen #workspace {
+        layout: horizontal;
+        height: 1fr;
+        min-height: 15;
+    }
+
+    HistoryScreen #list-column {
+        width: 1fr;
+        height: 1fr;
+        margin-right: 1;
+        border: solid $accent;
+        padding: 1;
+    }
+
+    HistoryScreen #history-list {
+        width: 1fr;
+        height: 1fr;
+        overflow-y: auto;
+        scrollbar-size-vertical: 0;
+    }
+
+    HistoryScreen #history-list:focus {
+        scrollbar-size-vertical: 1;
+    }
+
+    HistoryScreen .history-item {
+        width: 1fr;
+        height: auto;
+        padding: 1;
+        margin-bottom: 1;
+        border: solid $surface-lighten-2;
+    }
+
+    HistoryScreen .history-item:hover {
+        background: $surface-lighten-2;
+    }
+
+    HistoryScreen .history-item.selected {
+        background: $primary;
+        color: $background;
+    }
+
+    HistoryScreen .history-item-time {
+        color: $text-muted;
+        width: 15;
+    }
+
+    HistoryScreen .history-item-query {
+        width: 1fr;
+    }
+
+    HistoryScreen .history-item-profile {
+        color: $text-muted;
+        width: 15;
+    }
+
+    HistoryScreen #detail-column {
+        width: 2fr;
+        height: 1fr;
+        overflow-y: auto;
+        scrollbar-size-vertical: 0;
+    }
+
+    HistoryScreen #detail-column:focus {
+        scrollbar-size-vertical: 1;
+    }
+
+    HistoryScreen #detail-column Static {
+        height: auto;
+    }
+
+    HistoryScreen #actions-row {
+        height: auto;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+
+    HistoryScreen #btn-load {
+        width: 12;
+        margin-right: 1;
+    }
+
+    HistoryScreen #btn-delete {
+        width: 10;
+        margin-right: 1;
+    }
+
+    HistoryScreen #btn-copy-query {
+        width: 14;
+        margin-right: 1;
+    }
+
+    HistoryScreen #btn-clear {
+        width: 10;
+    }
+
+    HistoryScreen #status-bar {
+        height: auto;
+        margin-top: 1;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._history = get_history_manager()
+        self._filtered_records = self._history.get_all()
+        self._selected_index = 0
+
+    def compose(self) -> ComposeResult:
+        """Compose screen layout."""
+        with Vertical(id="history-root"):
+            # Header
+            with Container(id="header"):
+                yield Static("Analysis History", classes="header-title")
+                yield Input(
+                    placeholder="Buscar query o perfil...",
+                    id="search-box",
+                )
+
+            # Main workspace
+            with Horizontal(id="workspace"):
+                # Left: History list
+                with Vertical(id="list-column"):
+                    yield Static(id="history-list")
+
+                # Right: Details
+                with Vertical(id="detail-column"):
+                    yield QuerySummary()
+                    yield MetricsPanel()
+                    yield PlanTreeWidget()
+                    yield AIInsightsPanel()
+
+            # Actions
+            with Horizontal(id="actions-row"):
+                yield Button("Cargar", variant="primary", id="btn-load")
+                yield Button("Borrar", id="btn-delete")
+                yield Button("Copiar Query", id="btn-copy-query")
+                yield Button("Limpiar Histórico", id="btn-clear")
+
+            # Status bar
+            yield Static(id="status-bar")
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        """Mount screen and render initial content."""
+        self.query_one("#search-box", Input).focus()
+        self._render_list()
+        self._update_status()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle search input changes.
+
+        Args:
+            event: Input changed event
+        """
+        search_text = event.value.strip()
+
+        if not search_text:
+            self._filtered_records = self._history.get_all()
+        else:
+            # Search in both query text and profile names
+            search_lower = search_text.lower()
+            self._filtered_records = [
+                r for r in self._history.get_all()
+                if search_lower in r.query.lower()
+                or search_lower in r.profile_name.lower()
+            ]
+
+        self._selected_index = 0
+        self._render_list()
+        self._update_status()
+
+    def action_go_back(self) -> None:
+        """Go back to previous screen."""
+        self.dismiss(None)
+
+    def action_select_next(self) -> None:
+        """Select next item in list."""
+        if self._filtered_records:
+            self._selected_index = (
+                self._selected_index + 1
+            ) % len(self._filtered_records)
+            self._render_list()
+            self._render_detail()
+
+    def action_select_previous(self) -> None:
+        """Select previous item in list."""
+        if self._filtered_records:
+            self._selected_index = (
+                self._selected_index - 1
+            ) % len(self._filtered_records)
+            self._render_list()
+            self._render_detail()
+
+    def action_select_first(self) -> None:
+        """Select first item in list."""
+        if self._filtered_records:
+            self._selected_index = 0
+            self._render_list()
+            self._render_detail()
+
+    def action_select_last(self) -> None:
+        """Select last item in list."""
+        if self._filtered_records:
+            self._selected_index = len(self._filtered_records) - 1
+            self._render_list()
+            self._render_detail()
+
+    def action_load_selected(self) -> None:
+        """Load selected analysis (returns to analysis screen)."""
+        if not self._filtered_records:
+            return
+
+        record = self._filtered_records[self._selected_index]
+        self.dismiss(record)
+
+    def action_delete_selected(self) -> None:
+        """Delete selected record from history."""
+        if not self._filtered_records:
+            return
+
+        record = self._filtered_records[self._selected_index]
+        # Find original index in full history
+        for i, r in enumerate(self._history.get_all()):
+            if r.created_at == record.created_at:
+                self._history.delete(i)
+                break
+
+        # Re-filter and render
+        search_box = self.query_one("#search-box", Input)
+        search_text = search_box.value
+        if search_text:
+            search_lower = search_text.lower()
+            self._filtered_records = [
+                r for r in self._history.get_all()
+                if search_lower in r.query.lower()
+                or search_lower in r.profile_name.lower()
+            ]
+        else:
+            self._filtered_records = self._history.get_all()
+
+        if self._filtered_records and self._selected_index >= len(
+            self._filtered_records
+        ):
+            self._selected_index = len(self._filtered_records) - 1
+
+        self._render_list()
+        self._render_detail()
+        self._update_status()
+
+    def action_clear_history(self) -> None:
+        """Clear all history after confirmation."""
+        self._history.clear()
+        self._filtered_records = []
+        self._selected_index = 0
+        self._render_list()
+        self._clear_detail()
+        self._update_status()
+
+    def action_quit(self) -> None:
+        """Exit the application."""
+        self.app.exit()
+
+    @on(Button.Pressed, "#btn-load")
+    def on_load_pressed(self) -> None:
+        """Load button pressed."""
+        self.action_load_selected()
+
+    @on(Button.Pressed, "#btn-delete")
+    def on_delete_pressed(self) -> None:
+        """Delete button pressed."""
+        self.action_delete_selected()
+
+    @on(Button.Pressed, "#btn-copy-query")
+    def on_copy_query_pressed(self) -> None:
+        """Copy query button pressed."""
+        if not self._filtered_records:
+            return
+
+        # In a real app, this would copy to clipboard
+        # For now, just show a message
+        status = self.query_one("#status-bar", Static)
+        status.update(
+            "[green]✓ Query copied to clipboard (simulated)[/green]"
+        )
+
+    @on(Button.Pressed, "#btn-clear")
+    def on_clear_pressed(self) -> None:
+        """Clear history button pressed."""
+        self.action_clear_history()
+
+    def _render_list(self) -> None:
+        """Render history list."""
+        list_widget = self.query_one("#history-list", Static)
+
+        if not self._filtered_records:
+            list_widget.update("[dim]No history records[/dim]")
+            return
+
+        lines = []
+        for i, record in enumerate(self._filtered_records):
+            selected = " → " if i == self._selected_index else "   "
+            time_str = record.created_at.strftime("%H:%M:%S")
+            query_preview = record.query_preview(40)
+            profile_str = f"[{record.profile_name}]"
+
+            if i == self._selected_index:
+                line = (
+                    f"{selected}[inverse]{time_str} "
+                    f"{query_preview} "
+                    f"{profile_str}[/inverse]"
+                )
+            else:
+                line = (
+                    f"{selected}[dim]{time_str}[/dim] "
+                    f"{query_preview} "
+                    f"[yellow]{profile_str}[/yellow]"
+                )
+
+            lines.append(line)
+
+        list_widget.update("\n".join(lines))
+
+    def _render_detail(self) -> None:
+        """Render detail view for selected record."""
+        if not self._filtered_records:
+            self._clear_detail()
+            return
+
+        record = self._filtered_records[self._selected_index]
+
+        # Update query summary
+        summary_widget = self.query_one(QuerySummary)
+        summary_widget.render_summary(record.query, record.report.engine)
+
+        # Update metrics
+        metrics_widget = self.query_one(MetricsPanel)
+        metrics_widget.render_metrics(
+            record.report.execution_time_ms,
+            record.report.plan_tree,
+        )
+
+        # Update plan tree
+        plan_widget = self.query_one(PlanTreeWidget)
+        plan_widget.render_plan(record.report.plan_tree)
+
+        # Update AI insights
+        ai_widget = self.query_one(AIInsightsPanel)
+        ai_widget.render_ai_analysis(record.report.ai_analysis)
+
+    def _clear_detail(self) -> None:
+        """Clear all detail panels."""
+        self.query_one(QuerySummary).clear()
+        self.query_one(MetricsPanel).clear()
+        self.query_one(PlanTreeWidget).clear()
+        self.query_one(AIInsightsPanel).clear()
+
+    def _update_status(self) -> None:
+        """Update status bar."""
+        status = self.query_one("#status-bar", Static)
+
+        if not self._filtered_records:
+            status.update("[yellow]No hay análisis en el histórico[/yellow]")
+            return
+
+        total = self._history.size()
+        current = self._selected_index + 1
+        filtered = len(self._filtered_records)
+
+        if filtered == total:
+            status.update(f"[dim]{current}/{total} análisis[/dim]")
+        else:
+            status.update(
+                f"[dim]{current}/{filtered} (mostrando) de {total} total[/dim]"
+            )

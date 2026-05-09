@@ -10,13 +10,9 @@ import pymysql
 
 from query_analyzer.adapters.base import BaseAdapter
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.migration_helpers import (
-    build_plan_tree,
-    detection_result_to_warnings_and_recommendations,
-)
+from query_analyzer.adapters.migration_helpers import build_plan_tree
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .mysql_metrics import MySQLMetricsHelper
 from .mysql_parser import MySQLExplainParser
@@ -153,10 +149,14 @@ class MySQLAdapter(BaseAdapter):
             query: SQL query to analyze
 
         Returns:
-            QueryAnalysisReport with execution plan and metrics
+            QueryAnalysisReport with EXPLAIN real del motor
 
         Raises:
             QueryAnalysisError: If query is DDL or analysis fails
+
+        Note:
+            v2.0.0: Retorna EXPLAIN real, sin score ni anti-patrones.
+            IA analysis se agrega en CLI si QA_AI_BASE_URL configurada.
         """
         if not self.is_connected():
             raise QueryAnalysisError("Not connected to database")
@@ -188,33 +188,24 @@ class MySQLAdapter(BaseAdapter):
 
             parsed_plan = self.parser.parse(explain_json)
 
-            # Normalize plan to engine-agnostic format for AntiPatternDetector
-            # MySQL parse() returns dict with query_block, we normalize it
+            # Get query_block for plan tree
             query_block = parsed_plan.get("query_block", {})
-            normalized_plan = self.parser.normalize_plan(query_block)
 
-            # Analyze with AntiPatternDetector for unified scoring
-            detector = AntiPatternDetector()
-            detection_result = detector.analyze(normalized_plan, query)
-
-            # Convert v1 data (strings) to v2 models (Warning, Recommendation)
-            warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                detection_result
-            )
-
-            # Build plan tree from raw EXPLAIN output
+            # Build plan tree for visual representation
             plan_tree = build_plan_tree(query_block)
+
+            # Generate simple plan summary
+            plan_summary = self._summarize_plan(query_block)
 
             metrics = self._get_query_metrics()
 
             report = QueryAnalysisReport(
                 engine="mysql",
                 query=query,
-                score=detection_result.score,
                 execution_time_ms=max(0.1, execution_time_ms),
-                warnings=warnings,
-                recommendations=recommendations,
                 plan_tree=plan_tree,
+                plan_summary=plan_summary,
+                ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                 analyzed_at=datetime.now(UTC),
                 raw_plan=parsed_plan,
                 metrics=metrics,
@@ -231,6 +222,35 @@ class MySQLAdapter(BaseAdapter):
             if self.connection:
                 self.connection.rollback()
             raise QueryAnalysisError(f"Error analyzing query: {e}") from e
+
+    def _summarize_plan(self, query_block: dict[str, Any]) -> str:
+        """Genera un resumen simple del plan de ejecución.
+
+        Args:
+            query_block: Query block dict from EXPLAIN JSON
+
+        Returns:
+            Cadena con resumen simple (ej: "Select from users")
+        """
+        if not query_block:
+            return "Unknown plan"
+
+        # MySQL EXPLAIN JSON structure is query_block > select_list > table references
+        select_type = query_block.get("select_type", "").lower()
+        
+        # Try to get table info
+        table_info = query_block.get("table", {})
+        if isinstance(table_info, dict):
+            table_name = table_info.get("table_name", "")
+            access_type = table_info.get("access_type", "").upper()
+            if table_name:
+                summary = f"{access_type} on {table_name}"
+            else:
+                summary = access_type or "Unknown"
+        else:
+            summary = f"{select_type} query"
+
+        return summary
 
     def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
         """Get list of slow queries exceeding threshold.

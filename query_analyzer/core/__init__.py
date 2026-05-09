@@ -1,21 +1,16 @@
-"""Core module - Motor de análisis de consultas."""
+"""Core module - Query Analysis Engine (v2.0.0).
 
-from query_analyzer.core.anti_pattern_detector import (
-    AntiPattern,
-    AntiPatternDetector,
-    DetectionResult,
-    DetectorConfig,
-    RecommendationEngine,
-    ScoringEngine,
-    Severity,
-)
+v2.0.0 Highlights:
+- AIAnalyzer: Generic LLM-based analysis (OpenAI-compatible)
+- AIAnalysisResult: Structured AI recommendations
+- Removed: AntiPatternDetector (moved to legacy/)
+
+Legacy v1 components are available at query_analyzer.core.legacy.anti_pattern_detector
+"""
+
+from query_analyzer.core.ai_analyzer import AIAnalysisResult, AIAnalyzer
 
 __all__ = [
-    "AntiPatternDetector",
-    "AntiPattern",
-    "DetectionResult",
-    "DetectorConfig",
-    "Severity",
-    "ScoringEngine",
-    "RecommendationEngine",
+    "AIAnalyzer",
+    "AIAnalysisResult",
 ]

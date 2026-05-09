@@ -230,48 +230,10 @@ class CassandraAdapter(BaseAdapter):
                 allow_filtering=has_allow_filtering,
             )
 
-            # Run anti-pattern detection
-            from query_analyzer.core.cassandra_anti_pattern_detector import (
-                CassandraAntiPatternDetector,
-            )
-
-            detector = CassandraAntiPatternDetector()
-            detection_result = detector.analyze(
-                parsed_query=parsed,
-                query=query,
-                table_schema=self._schema_cache.get(table_name, {}),
-            )
-
-            # Convert to warnings and recommendations
+            # No anti-pattern detection in v2.0.0
+            # Analysis only via tracing metrics
             warnings: list[Warning] = []
-            for ap in detection_result.anti_patterns:
-                severity_map = {
-                    "critical": "critical",
-                    "high": "high",
-                    "medium": "medium",
-                    "low": "low",
-                }
-                warning = Warning(
-                    severity=severity_map.get(ap.severity, "low"),  # type: ignore
-                    message=ap.message,
-                    node_type=ap.name,
-                    affected_object=table_name,
-                    metadata={"penalty": ap.penalty},
-                )
-                warnings.append(warning)
-
             recommendations: list[Recommendation] = []
-            for idx, rec_text in enumerate(detection_result.recommendations, start=1):
-                priority = max(1, 10 - idx)
-                rec = Recommendation(
-                    priority=priority,
-                    title=rec_text.split("\n")[0][:50],
-                    description=rec_text,
-                    code_snippet=None,
-                    affected_object=table_name,
-                    metadata={},
-                )
-                recommendations.append(rec)
 
             # Build plan tree
             plan_tree = self._parser.build_plan_tree(
@@ -280,15 +242,19 @@ class CassandraAdapter(BaseAdapter):
                 keyspace=self._config.database or "",
             )
 
-            # Create report
+            # Generate simple plan summary
+            plan_summary = f"Query on {table_name}"
+            if has_allow_filtering:
+                plan_summary += " (with ALLOW FILTERING)"
+
+            # Create report (no score, no anti-patterns)
             report = QueryAnalysisReport(
                 engine="cassandra",
                 query=query,
-                score=detection_result.score,
                 execution_time_ms=execution_time_ms,
-                warnings=warnings,
-                recommendations=recommendations,
                 plan_tree=plan_tree,
+                plan_summary=plan_summary,
+                ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                 analyzed_at=datetime.now(UTC),
                 raw_plan={
                     "trace_events": [

@@ -18,13 +18,9 @@ from query_analyzer.adapters.exceptions import (
     DisconnectionError,
     QueryAnalysisError,
 )
-from query_analyzer.adapters.migration_helpers import (
-    build_plan_tree,
-    detection_result_to_warnings_and_recommendations,
-)
+from query_analyzer.adapters.migration_helpers import build_plan_tree
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .sqlite_metrics import SQLiteMetricsHelper
 from .sqlite_parser import SQLiteExplainParser
@@ -134,10 +130,14 @@ class SQLiteAdapter(BaseAdapter):
             query: SQL query to analyze (SELECT, INSERT, UPDATE, DELETE)
 
         Returns:
-            QueryAnalysisReport with analysis results
+            QueryAnalysisReport with EXPLAIN real del motor
 
         Raises:
             QueryAnalysisError: If query is invalid or analysis fails
+
+        Note:
+            v2.0.0: Retorna EXPLAIN real, sin score ni anti-patrones.
+            IA analysis se agrega en CLI si QA_AI_BASE_URL configurada.
         """
         if not self.is_connected():
             raise QueryAnalysisError("Not connected to database")
@@ -165,39 +165,21 @@ class SQLiteAdapter(BaseAdapter):
 
             parsed_plan = self.parser.parse(explain_text)
 
-            # Normalize plan to engine-agnostic format for AntiPatternDetector
-            # SQLite parse() returns dict with nodes list, normalize each top-level node
-            # For simplicity, we normalize the first node (SQLite usually has single root)
-            normalized_plan = {}
-            if parsed_plan.get("nodes"):
-                # Build normalized plan from SQLite nodes
-                # SQLite's structure is different - we need to construct a normalized tree
-                normalized_plan = self._build_normalized_plan_from_nodes(
-                    parsed_plan.get("nodes", [])
-                )
-
-            # Analyze with AntiPatternDetector for unified scoring
-            detector = AntiPatternDetector()
-            detection_result = detector.analyze(normalized_plan, query)
-
-            # Convert v1 data (strings) to v2 models (Warning, Recommendation)
-            warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                detection_result
-            )
-
-            # Build plan tree from parsed plan
+            # Build plan tree for visual representation
             plan_tree = build_plan_tree(parsed_plan)
+
+            # Generate simple plan summary
+            plan_summary = self._summarize_plan(parsed_plan)
 
             metrics = self._get_query_metrics()
 
             report = QueryAnalysisReport(
                 engine="sqlite",
                 query=query,
-                score=detection_result.score,
                 execution_time_ms=1.0,
-                warnings=warnings,
-                recommendations=recommendations,
                 plan_tree=plan_tree,
+                plan_summary=plan_summary,
+                ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                 analyzed_at=datetime.now(UTC),
                 raw_plan=parsed_plan,
                 metrics=metrics,
@@ -213,6 +195,31 @@ class SQLiteAdapter(BaseAdapter):
             if self._connection:
                 self._connection.rollback()
             raise QueryAnalysisError(f"Error analyzing query: {e}") from e
+
+    def _summarize_plan(self, parsed_plan: dict[str, Any]) -> str:
+        """Genera un resumen simple del plan de ejecución.
+
+        Args:
+            parsed_plan: Parsed plan dict from EXPLAIN
+
+        Returns:
+            Cadena con resumen simple (ej: "Scan Table users")
+        """
+        if not parsed_plan or not parsed_plan.get("nodes"):
+            return "Unknown plan"
+
+        # Get the first node (SQLite typically has single or simple tree)
+        nodes = parsed_plan.get("nodes", [])
+        if not nodes:
+            return "Unknown plan"
+
+        first_node = nodes[0]
+        node_type = first_node.get("type", "Unknown")
+        detail = first_node.get("detail", "")
+
+        if detail:
+            return f"{node_type}: {detail}"
+        return node_type
 
     def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
         """Get slow queries (not supported in SQLite).

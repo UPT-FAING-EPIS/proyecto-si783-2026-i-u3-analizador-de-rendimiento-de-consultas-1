@@ -10,13 +10,9 @@ from query_analyzer.adapters.exceptions import (
     ConnectionError as AdapterConnectionError,
 )
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.migration_helpers import (
-    build_plan_tree,
-    detection_result_to_warnings_and_recommendations,
-)
+from query_analyzer.adapters.migration_helpers import build_plan_tree
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .sqlserver_metrics import MSSQLMetricsHelper
 from .sqlserver_parser import MSSQLExplainParser
@@ -159,29 +155,20 @@ class MSSQLAdapter(BaseAdapter):
                     raw_xml = raw_xml.decode("utf-16-le")
 
                 metrics = self.parser.parse(raw_xml)
-                normalized_plan = self.parser.normalize_plan(raw_xml)
-
-                detector = AntiPatternDetector()
-                detection_result = detector.analyze(normalized_plan, query)
-
-                warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                    detection_result
-                )
-
                 plan_dict = self._xml_to_plan_dict(raw_xml)
                 plan_tree = build_plan_tree(plan_dict)
+                plan_summary = self._summarize_plan(plan_tree)
 
                 return QueryAnalysisReport(
                     engine="mssql",
                     query=query,
-                    score=detection_result.score,
                     execution_time_ms=1.0,
-                    warnings=warnings,
-                    recommendations=recommendations,
+                    plan_summary=plan_summary,
                     plan_tree=plan_tree,
                     analyzed_at=datetime.now(UTC),
                     raw_plan={"xml": raw_xml, **metrics},
                     metrics=metrics,
+                    ai_analysis=None,
                 )
 
         except QueryAnalysisError:
@@ -194,6 +181,29 @@ class MSSQLAdapter(BaseAdapter):
                 pass
             self._connection.rollback()
             raise QueryAnalysisError(f"Failed to analyze query: {e}") from e
+
+    def _summarize_plan(self, plan_tree: Any) -> str:
+        """Generate a brief summary of the query plan.
+
+        Args:
+            plan_tree: PlanNode tree from build_plan_tree()
+
+        Returns:
+            Brief summary string of the plan
+        """
+        if not plan_tree:
+            return "Empty query plan"
+
+        def get_first_node_type(node: Any) -> str:
+            """Extract first node type from plan tree."""
+            if hasattr(node, "node_type"):
+                return node.node_type
+            if isinstance(node, dict) and "Node Type" in node:
+                return node["Node Type"]
+            return "Unknown"
+
+        first_op = get_first_node_type(plan_tree)
+        return f"{first_op} on database"
 
     def _xml_to_plan_dict(self, xml_string: str) -> dict[str, Any]:
         """Convert raw SHOWPLAN XML to a dict compatible with build_plan_tree().

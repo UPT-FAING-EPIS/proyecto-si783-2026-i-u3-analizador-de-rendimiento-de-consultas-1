@@ -423,20 +423,59 @@ class Recommendation(BaseModel):
         return v.strip()
 
 
-class QueryAnalysisReport(BaseModel):
-    """Reporte de análisis de consulta - Modelo v2 Estructurado.
+class AIAnalysisResult(BaseModel):
+    """Resultado del análisis con IA - v2.0.0.
 
-    Reemplaza strings planos por dataclasses que preservan
-    semántica y permiten TUI agnóstica.
+    Contiene insights en lenguaje natural sobre el plan de ejecución.
+    Solo poblado si el usuario configura QA_AI_BASE_URL y QA_AI_API_KEY.
+
+    Attributes:
+        summary: Resumen del EXPLAIN en lenguaje natural
+        observations: Observaciones puntuales del plan
+        recommendations: Recomendaciones accionables
+        raw_response: Respuesta completa de la IA (para debugging)
+    """
+
+    summary: str
+    """Resumen del EXPLAIN en lenguaje natural"""
+
+    observations: list[str] = Field(default_factory=list)
+    """Observaciones puntuales del plan"""
+
+    recommendations: list[str] = Field(default_factory=list)
+    """Recomendaciones accionables"""
+
+    raw_response: str | None = None
+    """Respuesta completa de la IA (para debugging)"""
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, v: str) -> str:
+        """Valida que summary no esté vacío."""
+        if not v or not v.strip():
+            raise ValueError("summary no puede estar vacío")
+        return v.strip()
+
+
+class QueryAnalysisReport(BaseModel):
+    """Reporte de análisis de consulta - Modelo v2.0.0.
+
+    CAMBIO IMPORTANTE: Enfoque en datos REALES del EXPLAIN.
+    - ❌ ELIMINADO: score (0-100 subjetivo)
+    - ❌ ELIMINADO: warnings (generadas por anti-patrones)
+    - ❌ ELIMINADO: recommendations (v1, estáticas)
+    - ✅ NUEVO: plan_summary (resumen simple del plan)
+    - ✅ NUEVO: ai_analysis (insights opcionales con IA)
 
     Attributes:
         engine: Motor de base de datos que ejecutó el análisis
         query: Consulta SQL analizada
-        score: Puntuación de optimización (0-100)
         execution_time_ms: Tiempo de ejecución en milisegundos
-        warnings: Lista de advertencias estructuradas
-        recommendations: Lista de recomendaciones priorizadas
         plan_tree: Árbol jerárquico del plan de ejecución
+        plan_summary: Resumen simple del plan
+        ai_analysis: Análisis con IA (si QA_AI_* configuradas)
         analyzed_at: Timestamp UTC de cuándo se realizó el análisis
         raw_plan: Plan de ejecución completo del motor (compatibilidad)
         metrics: Métricas adicionales del plan
@@ -448,31 +487,29 @@ class QueryAnalysisReport(BaseModel):
     query: str
     """Consulta original analizada"""
 
-    score: int
-    """Puntuación 0-100 (CAMBIO: float → int para mayor precisión)
-
-    Escala:
-    - 90-100: Excelente (sin problemas detectados)
-    - 70-89: Bueno (problemas menores)
-    - 50-69: Aceptable (problemas moderados)
-    - 30-49: Pobre (problemas significativos)
-    - 0-29: Crítico (optimización urgente)
-    """
-
     execution_time_ms: float
     """Tiempo de ejecución en milisegundos"""
-
-    warnings: list[Warning] = Field(default_factory=list)
-    """Advertencias estructuradas - reemplaza list[str]"""
-
-    recommendations: list[Recommendation] = Field(default_factory=list)
-    """Recomendaciones priorizadas - reemplaza list[str]"""
 
     plan_tree: PlanNode | None = None
     """Árbol jerárquico del plan de ejecución
 
     Construido desde el plan normalizado del parser.
     None si el motor no proporciona plan (ej: Redis).
+    """
+
+    plan_summary: str = ""
+    """Resumen simple del plan (ej: 'Index Scan on users').
+
+    Generado por el adapter sin IA, siempre disponible.
+    """
+
+    ai_analysis: AIAnalysisResult | None = None
+    """Análisis con IA (si QA_AI_BASE_URL configurada).
+
+    None si:
+    - Usuario no configuró variables de entorno de IA
+    - Error al contactar el proveedor de IA
+    - Usuario ejecutó sin IA deliberadamente
     """
 
     analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -540,14 +577,6 @@ class QueryAnalysisReport(BaseModel):
             raise ValueError("Motor no soportado")
 
         return engine_lower
-
-    @field_validator("score")
-    @classmethod
-    def validate_score(cls, v: int) -> int:
-        """Valida que score esté entre 0-100."""
-        if not 0 <= v <= 100:
-            raise ValueError("Score debe estar entre 0 y 100")
-        return v
 
     @field_validator("execution_time_ms")
     @classmethod

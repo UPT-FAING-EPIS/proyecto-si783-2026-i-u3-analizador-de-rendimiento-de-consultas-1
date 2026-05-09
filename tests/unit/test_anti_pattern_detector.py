@@ -1,13 +1,21 @@
 """
 Tests unitarios para AntiPatternDetector.
 
+⚠️ DEPRECATED v2.0.0: AntiPatternDetector removed from core.
+Legacy tests kept for reference (skipped by default).
+
 Prueba los componentes básicos:
 - ScoringEngine
 - RecommendationEngine
 - AntiPatternDetector (métodos de detección)
 """
 
-from query_analyzer.core import (
+import pytest
+
+# Skip all tests in this module - AntiPatternDetector is deprecated v2.0.0
+pytestmark = pytest.mark.skip(reason="AntiPatternDetector deprecated v2.0.0")
+
+from query_analyzer.core.anti_pattern_detector import (
     AntiPatternDetector,
     DetectorConfig,
     RecommendationEngine,

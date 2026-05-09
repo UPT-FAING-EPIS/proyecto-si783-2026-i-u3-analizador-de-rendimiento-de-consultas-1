@@ -1,6 +1,6 @@
 """CockroachDB database adapter using psycopg2 (wire protocol compatible).
 
-CockroachDB implements PostgreSQL wire protocol, so we extend PostgreSQLAdapter
+CockroachDB implements PostgreSQL wire protocol, so we extend BaseAdapter
 and use CockroachDBParser for CRDB-specific optimizations:
 - EXPLAIN with intelligent fallback: DISTSQL → JSON → Text format
 - CRDB-specific node types: Lookup Join, Zigzag Join, distributed execution
@@ -21,13 +21,9 @@ from query_analyzer.adapters.exceptions import (
     ConnectionError as AdapterConnectionError,
 )
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.migration_helpers import (
-    build_plan_tree,
-    detection_result_to_warnings_and_recommendations,
-)
+from query_analyzer.adapters.migration_helpers import build_plan_tree
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .cockroachdb_parser import CockroachDBParser
 from .postgresql_metrics import PostgreSQLMetricsHelper
@@ -119,7 +115,7 @@ class CockroachDBAdapter(BaseAdapter):
             return False
 
     def execute_explain(self, query: str) -> QueryAnalysisReport:
-        """Execute EXPLAIN with intelligent fallback strategy.
+        """Execute EXPLAIN ANALYZE and generate analysis report.
 
         Attempts formats in this order (CRDB v23.2+):
         1. EXPLAIN (DISTSQL, ANALYZE, FORMAT JSON) — full distributed metrics
@@ -130,10 +126,14 @@ class CockroachDBAdapter(BaseAdapter):
             query: SQL query to analyze (SELECT/INSERT/UPDATE/DELETE)
 
         Returns:
-            QueryAnalysisReport with analysis results
+            QueryAnalysisReport with EXPLAIN real del motor
 
         Raises:
             QueryAnalysisError: If query analysis fails
+
+        Note:
+            v2.0.0: Retorna EXPLAIN real, sin score ni anti-patrones.
+            IA analysis se agrega en CLI si QA_AI_BASE_URL configurada.
         """
         if not self._is_connected:
             raise QueryAnalysisError("Not connected to database")
@@ -169,41 +169,6 @@ class CockroachDBAdapter(BaseAdapter):
                     else self._parse_text_explain(explain_text)
                 )
 
-                # Normalize plan for AntiPatternDetector
-                normalized_plan = {}
-                if explain_json:
-                    root_plan = explain_json.get("Plan", {})
-                    if root_plan:
-                        normalized_plan = self.parser.normalize_plan(root_plan)
-
-                # Analyze with AntiPatternDetector
-                detector = AntiPatternDetector()
-                detection_result = detector.analyze(normalized_plan, query)
-
-                # Convert to v2 models
-                warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                    detection_result
-                )
-
-                # Extract CRDB-specific warnings from text
-                text_warnings = self._detect_crdb_specific_issues(explain_text, metrics)
-                from query_analyzer.adapters.models import Warning
-
-                for warning_msg in text_warnings:
-                    severity_str = "critical" if "CRITICAL" in warning_msg else "high"
-                    severity: Literal["critical", "high", "medium", "low"] = cast(
-                        Literal["critical", "high", "medium", "low"], severity_str
-                    )
-                    warnings.append(
-                        Warning(
-                            message=warning_msg,
-                            severity=severity,
-                            node_type="Seq Scan",
-                            affected_object=None,
-                            metadata={},
-                        )
-                    )
-
                 # Build plan tree
                 plan_tree = None
                 if explain_json:
@@ -211,14 +176,16 @@ class CockroachDBAdapter(BaseAdapter):
                     if root_plan:
                         plan_tree = build_plan_tree(root_plan)
 
+                # Generate simple plan summary
+                plan_summary = self._summarize_plan(explain_json if explain_json else explain_text)
+
                 return QueryAnalysisReport(
                     engine="cockroachdb",
                     query=query,
-                    score=detection_result.score,
                     execution_time_ms=metrics.get("execution_time_ms", 1.0),
-                    warnings=warnings,
-                    recommendations=recommendations,
                     plan_tree=plan_tree,
+                    plan_summary=plan_summary,
+                    ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                     analyzed_at=datetime.now(UTC),
                     raw_plan=explain_json,
                     metrics=metrics,
@@ -229,6 +196,30 @@ class CockroachDBAdapter(BaseAdapter):
         except Exception as e:
             self._connection.rollback()
             raise QueryAnalysisError(f"Failed to analyze query with EXPLAIN: {e}") from e
+
+    def _summarize_plan(self, explain_data: Any) -> str:
+        """Genera un resumen simple del plan de ejecución.
+
+        Args:
+            explain_data: Plan dict (JSON) or text string
+
+        Returns:
+            Cadena con resumen simple
+        """
+        if isinstance(explain_data, dict):
+            root_plan = explain_data.get("Plan", {})
+            if root_plan:
+                node_type = root_plan.get("Node Type", "Unknown")
+                table_name = root_plan.get("Relation Name", "")
+                if table_name:
+                    return f"{node_type} on {table_name}"
+                return node_type
+        elif isinstance(explain_data, str):
+            # Extract first line of text plan
+            first_line = explain_data.split("\n")[0] if explain_data else "Unknown"
+            return first_line.strip()
+        
+        return "Unknown plan"
 
     def _detect_crdb_specific_issues(self, plan_text: str, metrics: dict[str, Any]) -> list[str]:
         """Detect CockroachDB-specific anti-patterns from EXPLAIN output.

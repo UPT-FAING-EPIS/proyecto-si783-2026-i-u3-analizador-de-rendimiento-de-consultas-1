@@ -235,7 +235,7 @@ class OutputFormatter:
         verbose: bool = False,
         console_instance: Console | None = None,
     ) -> None:
-        """Print formatted report.
+        """Print formatted report (v2.0.0 - no score, AI-ready).
 
         Args:
             report: QueryAnalysisReport to print
@@ -248,53 +248,39 @@ class OutputFormatter:
         target_console = console_instance if console_instance else console
 
         if format == "rich":
-            # Header - simplified ASCII output for Windows compatibility
-            if report.score >= 70:
-                score_indicator = "[green]GOOD[/green]"
-            elif report.score >= 50:
-                score_indicator = "[yellow]FAIR[/yellow]"
-            else:
-                score_indicator = "[red]POOR[/red]"
-
+            # Header
             query_display = truncate_text(report.query, max_width=100)
 
-            target_console.print("[bold cyan]--- QUERY ANALYSIS REPORT ---[/bold cyan]")
+            target_console.print("[bold cyan]--- QUERY ANALYSIS REPORT (v2.0.0) ---[/bold cyan]")
             target_console.print(f"[cyan]Engine:[/cyan] [bold]{report.engine}[/bold]")
             target_console.print(
-                f"[cyan]Score:[/cyan] {score_indicator} [bold]{report.score}/100[/bold]"
+                f"[cyan]Execution Time:[/cyan] [bold]{report.execution_time_ms:.2f} ms[/bold]"
             )
-            target_console.print(f"[cyan]Execution Time:[/cyan] {report.execution_time_ms:.2f} ms")
             target_console.print(f"[cyan]Query:[/cyan] {query_display}")
+            if report.plan_summary:
+                target_console.print(f"[cyan]Plan Summary:[/cyan] {report.plan_summary}")
             target_console.print()
 
-            # Warnings section
-            if report.warnings:
+            # AI Analysis section (if available)
+            if report.ai_analysis:
                 target_console.print()
-                target_console.print(
-                    f"[bold yellow]WARNINGS ({len(report.warnings)})[/bold yellow]"
-                )
-                warnings_table = Table(show_header=True, header_style="bold")
-                warnings_table.add_column("Severity", width=10)
-                warnings_table.add_column("Message", no_wrap=False)
-                for w in report.warnings:
-                    warnings_table.add_row(w.severity.upper(), w.message)
-                target_console.print(warnings_table)
-
-            # Recommendations section
-            if report.recommendations:
+                target_console.print("[bold green]AI ANALYSIS[/bold green]")
+                
+                ai = report.ai_analysis
+                if ai.summary:
+                    target_console.print(f"[green]Summary:[/green] {ai.summary}")
+                
+                if ai.observations:
+                    target_console.print(f"[green]Observations:[/green]")
+                    for obs in ai.observations:
+                        target_console.print(f"  • {obs}")
+                
+                if ai.recommendations:
+                    target_console.print(f"[green]AI Recommendations:[/green]")
+                    for i, rec in enumerate(ai.recommendations, 1):
+                        target_console.print(f"  {i}. {rec}")
+                
                 target_console.print()
-                target_console.print(
-                    f"[bold cyan]RECOMMENDATIONS ({len(report.recommendations)})[/bold cyan]"
-                )
-                recs_table = Table(show_header=True, header_style="bold")
-                recs_table.add_column("Priority", width=10)
-                recs_table.add_column("Action", no_wrap=False)
-                for r in report.recommendations:
-                    priority_label = (
-                        "HIGH" if r.priority <= 3 else "MED" if r.priority <= 7 else "LOW"
-                    )
-                    recs_table.add_row(f"{priority_label} {r.priority}", r.title)
-                target_console.print(recs_table)
 
             # Metrics section
             if report.metrics:
@@ -306,6 +292,9 @@ class OutputFormatter:
                 for key, value in list(report.metrics.items())[:5]:
                     metrics_table.add_row(key, str(value))
                 target_console.print(metrics_table)
+
+            target_console.print()
+            target_console.print("[dim]Note: AI insights available if QA_AI_BASE_URL is configured[/dim]")
         elif format == "json":
             import json
 

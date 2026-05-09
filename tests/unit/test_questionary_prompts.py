@@ -1,8 +1,14 @@
-"""Tests for questionary-based interactive CLI prompts."""
+"""Tests for questionary-based interactive CLI prompts.
+
+Note: questionary is optional dependency. Tests skipped if not installed.
+"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Skip all tests in this module if questionary not installed
+pytest.importorskip("questionary")
 
 from query_analyzer.cli.questionary_prompts import (
     _is_interactive,

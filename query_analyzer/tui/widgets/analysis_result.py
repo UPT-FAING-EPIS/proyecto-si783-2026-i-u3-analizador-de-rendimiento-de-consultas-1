@@ -26,10 +26,12 @@ class WarningsPanel(Container):
         padding: 1;
         background: $panel;
         overflow-y: auto;
+        scrollbar-size-vertical: 0;
     }
 
     WarningsPanel:focus {
         border: solid $primary;
+        scrollbar-size-vertical: 1;
     }
 
     WarningsPanel .section-title {
@@ -41,6 +43,11 @@ class WarningsPanel(Container):
         height: 1fr;
         border: solid $surface-lighten-1;
         overflow-y: auto;
+        scrollbar-size-vertical: 0;
+    }
+
+    WarningsPanel ListView:focus {
+        scrollbar-size-vertical: 1;
     }
 
     WarningsPanel ListItem {
@@ -54,6 +61,10 @@ class WarningsPanel(Container):
     }
 
     WarningsPanel #warnings-list {
+        scrollbar-size-vertical: 0;
+    }
+
+    WarningsPanel #warnings-list:focus {
         scrollbar-size-vertical: 1;
     }
     """
@@ -125,10 +136,12 @@ class RecommendationsPanel(Container):
         padding: 1;
         background: $panel;
         overflow-y: auto;
+        scrollbar-size-vertical: 0;
     }
 
     RecommendationsPanel:focus {
         border: solid $primary;
+        scrollbar-size-vertical: 1;
     }
 
     RecommendationsPanel .section-title {
@@ -140,6 +153,11 @@ class RecommendationsPanel(Container):
         height: 1fr;
         border: solid $surface-lighten-1;
         overflow-y: auto;
+        scrollbar-size-vertical: 0;
+    }
+
+    RecommendationsPanel ListView:focus {
+        scrollbar-size-vertical: 1;
     }
 
     RecommendationsPanel ListItem {

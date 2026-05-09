@@ -15,7 +15,6 @@ from pymongo.errors import (
 from ..base import BaseAdapter
 from ..exceptions import ConnectionError as AdapterConnectionError
 from ..exceptions import QueryAnalysisError
-from ..migration_helpers import detection_result_to_warnings_and_recommendations
 from ..models import ConnectionConfig, QueryAnalysisReport
 from ..registry import AdapterRegistry
 from .mongodb_parser import MongoExplainParser
@@ -114,10 +113,14 @@ class MongoDBAdapter(BaseAdapter):
                 }
 
         Returns:
-            QueryAnalysisReport v2 with metrics and anti-patterns
+            QueryAnalysisReport con EXPLAIN real del motor
 
         Raises:
             QueryAnalysisError: If query execution fails
+
+        Note:
+            v2.0.0: Retorna EXPLAIN real, sin score ni anti-patrones.
+            IA analysis se agrega en CLI si QA_AI_BASE_URL configurada.
         """
         try:
             if not self._is_connected or self._db is None:
@@ -155,17 +158,6 @@ class MongoDBAdapter(BaseAdapter):
             # Build PlanNode tree from MongoDB stages
             plan_tree = MongoExplainParser.build_plan_tree(explain_result)
 
-            # Detect anti-patterns using unified AntiPatternDetector
-            from ...core.anti_pattern_detector import AntiPatternDetector
-
-            detector = AntiPatternDetector()
-            detection_result = detector.analyze_mongodb_patterns(parsed_explain, query)
-
-            # Convert detection result to v2 models (Warning, Recommendation objects)
-            warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                detection_result
-            )
-
             # Extract metrics
             docs_returned = parsed_explain["metrics"]["documents_returned"]
             docs_examined = parsed_explain["metrics"]["documents_examined"]
@@ -176,15 +168,17 @@ class MongoDBAdapter(BaseAdapter):
             if execution_time_ms <= 0:
                 execution_time_ms = 1.0
 
-            # Build report with v2 models
+            # Generate simple plan summary
+            plan_summary = self._summarize_plan(explain_result)
+
+            # Build report with v2 models (no score, no anti-patterns)
             report = QueryAnalysisReport(
                 engine="mongodb",
                 query=query,
-                score=detection_result.score,
                 execution_time_ms=execution_time_ms,
-                warnings=warnings,
-                recommendations=recommendations,
                 plan_tree=plan_tree,
+                plan_summary=plan_summary,
+                ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                 analyzed_at=datetime.now(UTC),
                 raw_plan=explain_result,
                 metrics={
@@ -193,16 +187,40 @@ class MongoDBAdapter(BaseAdapter):
                     "keys_examined": parsed_explain["metrics"]["keys_examined"],
                     "execution_stages": parsed_explain["metrics"]["execution_stages"],
                     "examination_ratio": examination_ratio,
-                    "anti_patterns_count": len(detection_result.anti_patterns),
                 },
             )
 
             return report
 
         except json.JSONDecodeError as e:
-            raise QueryAnalysisError(f"Invalid JSON query format: {e}") from e
+            raise QueryAnalysisError(f"Invalid query JSON: {e}") from e
+        except OperationFailure as e:
+            raise QueryAnalysisError(f"MongoDB query failed: {e}") from e
         except Exception as e:
-            raise QueryAnalysisError(f"Failed to execute explain: {e}") from e
+            raise QueryAnalysisError(f"Failed to analyze query: {e}") from e
+
+    def _summarize_plan(self, explain_result: dict[str, Any]) -> str:
+        """Genera un resumen simple del plan de ejecución MongoDB.
+
+        Args:
+            explain_result: Result from cursor.explain()
+
+        Returns:
+            Cadena con resumen simple (ej: "COLLSCAN" o "IXSCAN")
+        """
+        executionStages = explain_result.get("executionStages", {})
+        stage = executionStages.get("stage", "Unknown")
+        
+        # Add key information if available
+        if "executionStages" in executionStages:
+            substages = executionStages.get("executionStages", [])
+            if substages:
+                if isinstance(substages, list) and len(substages) > 0:
+                    first_substage = substages[0].get("stage", "")
+                    if first_substage:
+                        return f"{stage} → {first_substage}"
+        
+        return stage
 
     def get_slow_queries(self, threshold_ms: int = 100) -> list[dict]:
         """Retrieve slow queries from profiling.

@@ -1,24 +1,20 @@
 """DynamoDB database adapter for query performance analysis.
 
 Uses boto3 to connect to DynamoDB (AWS or local DynamoDB-Local).
-Analyzes Query and Scan operations based on metrics and anti-patterns.
+Analyzes Query and Scan operations based on metrics.
 
 Architecture:
 - Metrics-driven analysis (no query optimizer)
-- Anti-patterns detected via DynamoDBAntiPatternDetector
-- Results converted to v2 QueryAnalysisReport models
+- Results converted to v2 QueryAnalysisReport models (no anti-patterns)
 """
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 from query_analyzer.adapters.base import BaseAdapter
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.dynamodb_anti_pattern_detector import (
-    DynamoDBAntiPatternDetector,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -132,17 +128,18 @@ class DynamoDBAdapter(BaseAdapter):
             query: JSON string representing DynamoDB Query or Scan
 
         Returns:
-            QueryAnalysisReport with analysis results
+            QueryAnalysisReport con EXPLAIN real del motor
 
         Raises:
             QueryAnalysisError: If analysis fails or not connected
+
+        Note:
+            v2.0.0: Retorna EXPLAIN real, sin score ni anti-patrones.
+            IA analysis se agrega en CLI si QA_AI_BASE_URL configurada.
         """
         import time
 
         from query_analyzer.adapters.exceptions import QueryAnalysisError
-        from query_analyzer.adapters.migration_helpers import (
-            detection_result_to_warnings_and_recommendations,
-        )
 
         if not self._is_connected or not self._dynamodb_client:
             raise QueryAnalysisError("Not connected to DynamoDB")
@@ -171,34 +168,28 @@ class DynamoDBAdapter(BaseAdapter):
             # Extract metrics from response
             metrics = self._parser.extract_consumed_capacity(response)
 
-            # Analyze with DynamoDBAntiPatternDetector
-            detector = DynamoDBAntiPatternDetector()
-            detection_result = detector.analyze(query_dict, response)
+            # Generate simple plan summary
+            operation_type = self._parser.extract_operation_type(query_dict)
+            plan_summary = f"{operation_type} on {table_name}"
 
-            # Convert to v2 models
-            warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                detection_result
-            )
-
-            # Build report
+            # Build report (no score, no anti-patterns)
             report = QueryAnalysisReport(
                 engine="dynamodb",
                 query=query,
-                score=detection_result.score,
-                warnings=warnings,
-                recommendations=recommendations,
                 execution_time_ms=max(execution_time_ms, 0.1),  # Ensure > 0
+                plan_tree=None,  # DynamoDB doesn't have a tree plan
+                plan_summary=plan_summary,
+                ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                 raw_plan=query_dict,
                 metrics={
                     "consumed_read_capacity": metrics["read_capacity_units"],
                     "item_count": metrics["item_count"],
                     "scanned_count": metrics["scanned_count"],
                 },
-                plan_tree=None,  # DynamoDB doesn't have a tree plan
                 analyzed_at=datetime.now(UTC),
             )
 
-            logger.info(f"Analysis complete: {table_name} (score={report.score})")
+            logger.info(f"Analysis complete: {table_name}")
             return report
 
         except QueryAnalysisError:

@@ -13,13 +13,9 @@ from query_analyzer.adapters.exceptions import (
     ConnectionError as AdapterConnectionError,
 )
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.migration_helpers import (
-    build_plan_tree,
-    detection_result_to_warnings_and_recommendations,
-)
+from query_analyzer.adapters.migration_helpers import build_plan_tree
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .postgresql_metrics import PostgreSQLMetricsHelper
 from .postgresql_parser import PostgreSQLExplainParser
@@ -108,10 +104,14 @@ class PostgreSQLAdapter(BaseAdapter):
             query: SQL query to analyze (SELECT/INSERT/UPDATE/DELETE)
 
         Returns:
-            QueryAnalysisReport with analysis results
+            QueryAnalysisReport with EXPLAIN real del motor
 
         Raises:
             QueryAnalysisError: If query analysis fails
+
+        Note:
+            v2.0.0: Retorna EXPLAIN real, sin score ni anti-patrones.
+            IA analysis se agrega en CLI si QA_AI_BASE_URL configurada.
         """
         if not self._is_connected:
             raise QueryAnalysisError("Not connected to database")
@@ -155,31 +155,23 @@ class PostgreSQLAdapter(BaseAdapter):
                 metrics = self.parser.parse(explain_json)
                 execution_time = metrics.get("execution_time_ms", 1.0)
 
-                # Normalize plan to engine-agnostic format for AntiPatternDetector
+                # Get root plan
                 root_plan = explain_json.get("Plan", {})
-                normalized_plan = self.parser.normalize_plan(root_plan)
 
-                # Analyze with AntiPatternDetector for unified scoring
-                detector = AntiPatternDetector()
-                detection_result = detector.analyze(normalized_plan, query)
-
-                # Convert v1 data (strings) to v2 models (Warning, Recommendation)
-                warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                    detection_result
-                )
-
-                # Build plan tree from raw EXPLAIN output
+                # Build plan tree for visual representation
                 plan_tree = build_plan_tree(root_plan)
 
-                # Build v2 report with structured models
+                # Generate simple plan summary
+                plan_summary = self._summarize_plan(root_plan)
+
+                # Build v2 report with EXPLAIN real (sin score, sin anti-patrones)
                 return QueryAnalysisReport(
                     engine="postgresql",
                     query=query,
-                    score=detection_result.score,
                     execution_time_ms=execution_time,
-                    warnings=warnings,
-                    recommendations=recommendations,
                     plan_tree=plan_tree,
+                    plan_summary=plan_summary,
+                    ai_analysis=None,  # ← Se agrega en CLI si hay IA configurada
                     analyzed_at=datetime.now(UTC),
                     raw_plan=explain_json,
                     metrics=metrics,
@@ -190,6 +182,37 @@ class PostgreSQLAdapter(BaseAdapter):
         except Exception as e:
             self._connection.rollback()
             raise QueryAnalysisError(f"Failed to analyze query with EXPLAIN: {e}") from e
+
+    def _summarize_plan(self, plan: dict[str, Any]) -> str:
+        """Genera un resumen simple del plan de ejecución.
+
+        Args:
+            plan: Plan dict from EXPLAIN JSON
+
+        Returns:
+            Cadena con resumen simple (ej: "Index Scan on users")
+        """
+        if not plan:
+            return "Unknown plan"
+
+        node_type = plan.get("Node Type", "Unknown")
+        relation_name = plan.get("Relation Name", "")
+        index_name = plan.get("Index Name", "")
+
+        # Construir resumen básico
+        if relation_name:
+            summary = f"{node_type} on {relation_name}"
+            if index_name:
+                summary += f" using {index_name}"
+        else:
+            summary = node_type
+
+        # Agregar información del filtro si existe
+        filter_condition = plan.get("Filter", "")
+        if filter_condition:
+            summary += f" (Filter: {filter_condition})"
+
+        return summary
 
     def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
         """Get slow queries from pg_stat_statements.

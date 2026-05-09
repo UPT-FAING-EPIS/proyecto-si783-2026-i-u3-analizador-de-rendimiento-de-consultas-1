@@ -1,96 +1,12 @@
-"""Migration helpers for converting v1 data to v2 QueryAnalysisReport models.
+"""Helper functions for building plan trees from EXPLAIN output.
 
-This module provides utilities to convert legacy v1 reports (with string-based
-warnings/recommendations) to v2 reports (with structured Warning/Recommendation
-dataclasses).
-
-Used by adapters during migration from v1 to v2 model.
+This module provides utilities for parsing and structuring query execution plans
+from various database engines into a unified PlanNode tree representation.
 """
 
-from typing import Any, Literal, cast
+from typing import Any
 
-from query_analyzer.core.anti_pattern_detector import AntiPattern, DetectionResult, Severity
-
-from .models import PlanNode, Recommendation, Warning
-
-
-def antipattern_to_warning(antipattern: AntiPattern) -> Warning:
-    """Convert AntiPattern to Warning dataclass.
-
-    Maps Severity enum to literal severity strings used by Warning.
-
-    Args:
-        antipattern: AntiPattern from detector
-
-    Returns:
-        Warning with mapped severity and metadata
-    """
-    severity_map = {
-        Severity.HIGH: "critical",
-        Severity.MEDIUM: "high",
-        Severity.LOW: "medium",
-    }
-
-    severity_str = severity_map.get(antipattern.severity, "low")
-    severity: Literal["critical", "high", "medium", "low"] = cast(
-        Literal["critical", "high", "medium", "low"], severity_str
-    )
-
-    affected_object = _resolve_affected_object(antipattern)
-
-    return Warning(
-        severity=severity,
-        message=antipattern.description,
-        node_type=antipattern.name,
-        affected_object=affected_object,
-        metadata={
-            "column": antipattern.affected_column,
-            **antipattern.metadata,
-        },
-    )
-
-
-def _resolve_affected_object(antipattern: AntiPattern) -> str:
-    """Resolve affected object name with safe fallbacks."""
-    if antipattern.affected_table and antipattern.affected_table.lower() not in {"none", "unknown"}:
-        return antipattern.affected_table
-
-    metadata = antipattern.metadata or {}
-    for key in ("table_name", "outer_table", "inner_table"):
-        value = metadata.get(key)
-        if isinstance(value, str) and value and value.lower() not in {"none", "unknown"}:
-            return value
-
-    return "unknown"
-
-
-def detection_result_to_warnings_and_recommendations(
-    detection_result: DetectionResult,
-) -> tuple[list[Warning], list[Recommendation]]:
-    """Convert DetectionResult to Warning and Recommendation lists.
-
-    Args:
-        detection_result: Result from AntiPatternDetector.analyze()
-
-    Returns:
-        Tuple of (warnings list, recommendations list)
-    """
-    warnings = [antipattern_to_warning(ap) for ap in detection_result.anti_patterns]
-
-    recommendations = []
-    for idx, rec_text in enumerate(detection_result.recommendations, start=1):
-        priority = max(1, 10 - idx)
-        rec = Recommendation(
-            priority=priority,
-            title=rec_text.split("\n")[0],
-            description=rec_text,
-            code_snippet=None,
-            affected_object="",
-            metadata={},
-        )
-        recommendations.append(rec)
-
-    return warnings, recommendations
+from .models import PlanNode
 
 
 def build_plan_tree(raw_plan_dict: dict[str, Any], node_type: str = "root") -> PlanNode | None:

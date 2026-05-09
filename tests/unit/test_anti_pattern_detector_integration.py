@@ -1,6 +1,9 @@
 """
 Tests de integración para AntiPatternDetector usando fixtures reales.
 
+⚠️ DEPRECATED v2.0.0: AntiPatternDetector removed from core.
+Legacy tests kept for reference (skipped by default).
+
 Carga fixtures JSON de planes normalizados para PostgreSQL, MySQL y SQLite,
 y valida que el detector identifique correctamente los anti-patrones.
 """
@@ -10,7 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from query_analyzer.core import AntiPatternDetector
+# Skip all tests in this module - AntiPatternDetector is deprecated v2.0.0
+pytestmark = pytest.mark.skip(reason="AntiPatternDetector deprecated v2.0.0")
+
+from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 
 @pytest.fixture

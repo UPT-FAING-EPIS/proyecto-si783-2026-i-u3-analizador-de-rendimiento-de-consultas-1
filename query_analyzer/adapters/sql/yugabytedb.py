@@ -1,6 +1,6 @@
 """YugabyteDB database adapter using psycopg2 (wire protocol compatible).
 
-YugabyteDB implements PostgreSQL wire protocol, so we extend PostgreSQLAdapter
+YugabyteDB implements PostgreSQL wire protocol, so we extend BaseAdapter
 with YugabyteDB-specific defaults:
 - Default port: 5433 (vs PostgreSQL 5432)
 - Uses standard PostgreSQL EXPLAIN format (no DISTSQL)
@@ -25,13 +25,9 @@ from query_analyzer.adapters.exceptions import (
     ConnectionError as AdapterConnectionError,
 )
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.migration_helpers import (
-    build_plan_tree,
-    detection_result_to_warnings_and_recommendations,
-)
+from query_analyzer.adapters.migration_helpers import build_plan_tree
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
-from query_analyzer.core.anti_pattern_detector import AntiPatternDetector
 
 from .postgresql_metrics import PostgreSQLMetricsHelper
 from .yugabytedb_parser import YugabyteDBParser
@@ -175,31 +171,18 @@ class YugabyteDBAdapter(BaseAdapter):
                 metrics = self.parser.parse(explain_json)
                 execution_time = metrics.get("execution_time_ms", 1.0)
 
-                # Normalize plan to engine-agnostic format for AntiPatternDetector
-                root_plan = explain_json.get("Plan", {})
-                normalized_plan = self.parser.normalize_plan(root_plan)
-
-                # Analyze with AntiPatternDetector for unified scoring
-                detector = AntiPatternDetector()
-                detection_result = detector.analyze(normalized_plan, query)
-
-                # Convert v1 data (strings) to v2 models (Warning, Recommendation)
-                warnings, recommendations = detection_result_to_warnings_and_recommendations(
-                    detection_result
-                )
-
                 # Build plan tree from raw EXPLAIN output
+                root_plan = explain_json.get("Plan", {})
                 plan_tree = build_plan_tree(root_plan)
 
                 # Create report
                 report = QueryAnalysisReport(
                     query=query,
                     engine="yugabytedb",
-                    score=detection_result.score,
                     execution_time_ms=execution_time,
-                    warnings=warnings,
-                    recommendations=recommendations,
                     plan_tree=plan_tree,
+                    plan_summary=self._summarize_plan(root_plan),
+                    ai_analysis=None,
                     analyzed_at=datetime.now(UTC),
                     raw_plan=explain_json,
                     metrics=metrics,
@@ -207,8 +190,8 @@ class YugabyteDBAdapter(BaseAdapter):
 
                 logger.info(
                     f"Query analysis complete (YugabyteDB): "
-                    f"score={detection_result.score}, exec_time={execution_time}ms, "
-                    f"nodes={metrics['node_count']}"
+                    f"exec_time={execution_time}ms, "
+                    f"nodes={metrics.get('node_count', 'unknown')}"
                 )
 
                 return report
@@ -219,6 +202,37 @@ class YugabyteDBAdapter(BaseAdapter):
             self._connection.rollback()
             logger.error(f"Query analysis failed: {e}")
             raise QueryAnalysisError(f"Failed to analyze query: {e}") from e
+
+    def _summarize_plan(self, plan: dict[str, Any]) -> str:
+        """Genera un resumen simple del plan de ejecución.
+
+        Args:
+            plan: Plan dict from EXPLAIN JSON
+
+        Returns:
+            Cadena con resumen simple (ej: "Index Scan on users")
+        """
+        if not plan:
+            return "Unknown plan"
+
+        node_type = plan.get("Node Type", "Unknown")
+        relation_name = plan.get("Relation Name", "")
+        index_name = plan.get("Index Name", "")
+
+        # Construir resumen básico
+        if relation_name:
+            summary = f"{node_type} on {relation_name}"
+            if index_name:
+                summary += f" using {index_name}"
+        else:
+            summary = node_type
+
+        # Agregar información del filtro si existe
+        filter_condition = plan.get("Filter", "")
+        if filter_condition:
+            summary += f" (Filter: {filter_condition})"
+
+        return summary
 
     def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
         """Get slow queries from YugabyteDB.

@@ -624,12 +624,54 @@ def analyze(
 
                 report = adapter.execute_explain(query_text)
 
+                # ═══════════════════════════════════════════════════════════
+                # STEP 5b: RUN AI ANALYSIS (optional, if configured)
+                # ═══════════════════════════════════════════════════════════
+                if verbose:
+                    err_console.print("[blue][INFO][/blue] Checking for AI configuration...")
+
+                try:
+                    from query_analyzer.core import AIAnalyzer
+
+                    ai_analyzer = AIAnalyzer()
+                    if ai_analyzer.is_configured():
+                        if verbose:
+                            err_console.print("[blue][INFO][/blue] Running AI analysis...")
+                        ai_result = ai_analyzer.analyze(
+                            query=report.query,
+                            plan_summary=report.plan_summary or "No plan summary",
+                            engine=report.engine,
+                        )
+                        if ai_result:
+                            report.ai_analysis = ai_result
+                            if verbose:
+                                err_console.print("[green][INFO][/green] AI analysis complete")
+                        else:
+                            if verbose:
+                                err_console.print(
+                                    "[yellow][INFO][/yellow] AI analysis returned None"
+                                )
+                    else:
+                        if verbose:
+                            err_console.print(
+                                "[yellow][INFO][/yellow] AI not configured "
+                                "(set QA_AI_BASE_URL to enable)"
+                            )
+                except ImportError:
+                    if verbose:
+                        err_console.print(
+                            "[yellow][INFO][/yellow] AI features not available "
+                            "(install requests library)"
+                        )
+                except Exception as e:
+                    if verbose:
+                        err_console.print(f"[yellow][WARNING][/yellow] AI analysis failed: {e}")
+
                 if verbose:
                     err_console.print(
                         f"[blue][INFO][/blue] Analysis complete: "
-                        f"score={report.score}, "
-                        f"warnings={len(report.warnings)}, "
-                        f"recommendations={len(report.recommendations)}"
+                        f"engine={report.engine}, "
+                        f"execution_time={report.execution_time_ms}ms"
                     )
 
         except ConnectionError as e:

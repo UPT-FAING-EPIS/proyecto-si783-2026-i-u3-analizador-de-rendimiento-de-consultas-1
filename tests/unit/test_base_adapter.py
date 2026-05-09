@@ -1,17 +1,17 @@
-"""Tests unitarios para BaseAdapter y modelos asociados."""
+"""Tests unitarios para BaseAdapter y modelos asociados (v2.0.0)."""
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from query_analyzer.adapters import (
+    AIAnalysisResult,
     BaseAdapter,
     ConnectionConfig,
     ConnectionError,
     QueryAnalysisReport,
-    Recommendation,
-    Warning,
 )
 
 # ============================================================================
@@ -37,30 +37,22 @@ class MockAdapter(BaseAdapter):
         return self._is_connected
 
     def execute_explain(self, query: str) -> QueryAnalysisReport:
-        """Simula análisis de query."""
+        """Simula análisis de query (v2.0.0 model)."""
         return QueryAnalysisReport(
             engine=self._config.engine,
             query=query,
-            score=85,
             execution_time_ms=123.45,
-            warnings=[
-                Warning(
-                    severity="medium",
-                    message="No índice en column X",
-                    node_type="Seq Scan",
-                    affected_object="column X",
-                )
-            ],
-            recommendations=[
-                Recommendation(
-                    priority=3,
-                    title="Crear índice en column X",
-                    description="Un índice en column X mejorará performance",
-                    affected_object="column X",
-                )
-            ],
+            plan_summary="Seq Scan on users",
+            plan_tree=None,
+            ai_analysis=AIAnalysisResult(
+                summary="Query performs full table scan",
+                observations=["No index on id column"],
+                recommendations=["Create index on id"],
+                raw_response="{}",
+            ),
             raw_plan={"type": "mock_plan", "rows": 1000},
             metrics={"rows": 1000, "cost": 100.5},
+            analyzed_at=datetime.now(UTC),
         )
 
     def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
@@ -358,77 +350,57 @@ def test_connection_config_empty_password() -> None:
 
 
 def test_query_analysis_report_valid() -> None:
-    """Verifica que QueryAnalysisReport acepta datos válidos."""
+    """Verifica que QueryAnalysisReport acepta datos válidos (v2.0.0)."""
     report = QueryAnalysisReport(
         engine="postgresql",
         query="SELECT * FROM users WHERE id = 1",
-        score=90,
         execution_time_ms=45.5,
-        warnings=[
-            Warning(
-                severity="low",
-                message="No índice en id",
-                affected_object="id",
-            )
-        ],
-        recommendations=[
-            Recommendation(
-                priority=5,
-                title="Crear índice",
-                description="Crear un índice en la columna id",
-                affected_object="id",
-            )
-        ],
+        plan_summary="Seq Scan on users",
+        plan_tree=None,
         raw_plan={"plan": "scan"},
         metrics={"rows": 100},
+        analyzed_at=datetime.now(UTC),
     )
 
     assert report.engine == "postgresql"
     assert report.query == "SELECT * FROM users WHERE id = 1"
-    assert report.score == 90
     assert report.execution_time_ms == 45.5
+    assert report.ai_analysis is None
 
 
-def test_query_analysis_report_min_score() -> None:
-    """Verifica que score mínimo (0) es válido."""
+def test_query_analysis_report_with_ai_analysis() -> None:
+    """Verifica que QueryAnalysisReport puede incluir AI analysis."""
+    ai_result = AIAnalysisResult(
+        summary="Query optimized",
+        observations=["Full scan detected"],
+        recommendations=["Add index"],
+        raw_response="{}",
+    )
     report = QueryAnalysisReport(
         engine="mysql",
         query="SELECT 1",
-        score=0,
         execution_time_ms=1.0,
+        plan_summary="Seq Scan",
+        ai_analysis=ai_result,
         raw_plan={},
-        metrics={},
+        analyzed_at=datetime.now(UTC),
     )
 
-    assert report.score == 0
+    assert report.ai_analysis is not None
+    assert report.ai_analysis.summary == "Query optimized"
 
 
-def test_query_analysis_report_max_score() -> None:
-    """Verifica que score máximo (100) es válido."""
-    report = QueryAnalysisReport(
-        engine="mysql",
-        query="SELECT 1",
-        score=100,
-        execution_time_ms=1.0,
-        raw_plan={},
-        metrics={},
-    )
-
-    assert report.score == 100
-
-
-def test_query_analysis_report_default_lists_and_dicts() -> None:
-    """Verifica que warnings, recommendations y metrics tienen defaults."""
+def test_query_analysis_report_default_metrics() -> None:
+    """Verifica que metrics tiene default vacío."""
     report = QueryAnalysisReport(
         engine="postgresql",
         query="SELECT 1",
-        score=50,
         execution_time_ms=10.5,
+        plan_summary="Seq Scan",
         raw_plan={},
+        analyzed_at=datetime.now(UTC),
     )
 
-    assert report.warnings == []
-    assert report.recommendations == []
     assert report.metrics == {}
 
 
@@ -437,43 +409,16 @@ def test_query_analysis_report_default_lists_and_dicts() -> None:
 # ============================================================================
 
 
-def test_query_analysis_report_invalid_score_negative() -> None:
-    """Verifica que rechaza score < 0."""
-    with pytest.raises(ValidationError) as exc_info:
-        QueryAnalysisReport(
-            engine="postgresql",
-            query="SELECT 1",
-            score=-1,
-            execution_time_ms=10.0,
-            raw_plan={},
-        )
-
-    assert "Score debe estar entre 0 y 100" in str(exc_info.value)
-
-
-def test_query_analysis_report_invalid_score_too_high() -> None:
-    """Verifica que rechaza score > 100."""
-    with pytest.raises(ValidationError) as exc_info:
-        QueryAnalysisReport(
-            engine="postgresql",
-            query="SELECT 1",
-            score=101,
-            execution_time_ms=10.0,
-            raw_plan={},
-        )
-
-    assert "Score debe estar entre 0 y 100" in str(exc_info.value)
-
-
 def test_query_analysis_report_invalid_execution_time_zero() -> None:
     """Verifica que rechaza execution_time_ms = 0."""
     with pytest.raises(ValidationError) as exc_info:
         QueryAnalysisReport(
             engine="postgresql",
             query="SELECT 1",
-            score=50,
             execution_time_ms=0.0,
+            plan_summary="Seq Scan",
             raw_plan={},
+            analyzed_at=datetime.now(UTC),
         )
 
     assert "debe ser mayor a 0" in str(exc_info.value)
@@ -485,9 +430,10 @@ def test_query_analysis_report_invalid_execution_time_negative() -> None:
         QueryAnalysisReport(
             engine="postgresql",
             query="SELECT 1",
-            score=50,
             execution_time_ms=-10.5,
+            plan_summary="Seq Scan",
             raw_plan={},
+            analyzed_at=datetime.now(UTC),
         )
 
     assert "debe ser mayor a 0" in str(exc_info.value)
@@ -499,9 +445,10 @@ def test_query_analysis_report_invalid_engine() -> None:
         QueryAnalysisReport(
             engine="oracle",
             query="SELECT 1",
-            score=50,
             execution_time_ms=10.0,
+            plan_summary="Seq Scan",
             raw_plan={},
+            analyzed_at=datetime.now(UTC),
         )
 
     assert "Motor no soportado" in str(exc_info.value)
@@ -686,7 +633,7 @@ def test_mock_adapter_test_connection() -> None:
 
 
 def test_mock_adapter_execute_explain() -> None:
-    """Verifica que execute_explain() retorna QueryAnalysisReport válido."""
+    """Verifica que execute_explain() retorna QueryAnalysisReport válido (v2.0.0)."""
     config = ConnectionConfig(
         engine="mysql",
         host="localhost",
@@ -702,10 +649,9 @@ def test_mock_adapter_execute_explain() -> None:
 
     assert report.engine == "mysql"
     assert report.query == "SELECT * FROM users WHERE id = 1"
-    assert report.score == 85
     assert report.execution_time_ms == 123.45
-    assert len(report.warnings) > 0
-    assert len(report.recommendations) > 0
+    assert report.ai_analysis is not None
+    assert "Query performs" in report.ai_analysis.summary
 
 
 def test_mock_adapter_get_slow_queries() -> None:

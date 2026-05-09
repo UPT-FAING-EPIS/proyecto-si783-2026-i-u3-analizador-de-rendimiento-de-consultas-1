@@ -146,6 +146,106 @@ Si lo ejecutas desde fuente:
 uv run query_analyzer --help
 ```
 
+## AI Integration (v2.0.0+)
+
+Query Analyzer now supports **optional AI-powered analysis** via pluggable LLM providers.
+
+### Configure Your LLM Provider
+
+To enable AI insights, set these environment variables:
+
+```bash
+# Required: All three must be set
+export QA_AI_BASE_URL="https://api.openai.com/v1"     # LLM provider URL
+export QA_AI_API_KEY="sk-..."                         # API key
+export QA_AI_MODEL="gpt-4o-mini"                      # Model identifier
+
+# Optional: Timeout in seconds (default: 30)
+export QA_AI_TIMEOUT_SECONDS="30"
+```
+
+### Supported LLM Providers
+
+| Provider | Base URL | Model Examples | Cost |
+|----------|----------|-----------------|------|
+| **OpenAI** | `https://api.openai.com/v1` | `gpt-4o-mini`, `gpt-4` | Paid |
+| **DeepSeek** | `https://api.deepseek.com/v1` | `deepseek-chat` | Paid (cheap) |
+| **Groq** | `https://api.groq.com/openai/v1` | `mixtral-8x7b-32768` | Free |
+| **Ollama (Local)** | `http://localhost:11434/v1` | `mistral`, `llama2` | Free (local) |
+
+### Example: Using OpenAI
+
+```bash
+export QA_AI_BASE_URL="https://api.openai.com/v1"
+export QA_AI_API_KEY="sk-proj-..."
+export QA_AI_MODEL="gpt-4o-mini"
+
+uv run query_analyzer analyze \
+  --engine postgresql \
+  --host localhost \
+  < query.sql
+```
+
+Output includes:
+- **Plan Summary**: Brief description of execution plan
+- **Metrics**: Execution time, rows examined, etc.
+- **AI Analysis** (if configured):
+  - Summary of query performance
+  - Observations (potential issues detected)
+  - Recommendations for optimization
+
+### Example: Using Local Ollama
+
+```bash
+# Start Ollama with Mistral model
+ollama run mistral
+
+# In another terminal
+export QA_AI_BASE_URL="http://localhost:11434/v1"
+export QA_AI_API_KEY="ollama"
+export QA_AI_MODEL="mistral"
+
+uv run query_analyzer analyze --engine sqlite < query.sql
+```
+
+### What Happens If AI Is Not Configured?
+
+The tool gracefully falls back to raw EXPLAIN analysis:
+- ✅ Plan tree visualization
+- ✅ Execution metrics
+- ✅ Performance stats
+- ❌ AI-powered recommendations (skipped)
+
+### Programmatic Usage
+
+```python
+from query_analyzer.adapters import AdapterRegistry
+from query_analyzer.core import AIAnalyzer
+
+# Execute EXPLAIN
+config = ConnectionConfig(
+    engine="postgresql",
+    host="localhost",
+    database="mydb",
+    username="user",
+    password="pass"
+)
+adapter = AdapterRegistry.create("postgresql", config)
+report = adapter.execute_explain("SELECT * FROM users")
+
+# Get AI insights (if configured)
+analyzer = AIAnalyzer()
+if analyzer.is_configured():
+    ai_result = analyzer.analyze(report)
+    print(f"Summary: {ai_result.summary}")
+    print(f"Observations: {ai_result.observations}")
+    print(f"Recommendations: {ai_result.recommendations}")
+else:
+    print("AI not configured")
+```
+
+---
+
 ## Entorno opcional con Docker
 
 Si quieres levantar servicios de base de datos locales para pruebas:

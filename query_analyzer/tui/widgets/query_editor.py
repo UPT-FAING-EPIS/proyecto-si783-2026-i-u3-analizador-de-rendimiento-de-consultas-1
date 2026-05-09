@@ -31,6 +31,11 @@ class QueryEditor(Container):
         height: 1fr;
         border: solid $surface-lighten-2;
         overflow-y: auto;
+        scrollbar-size-vertical: 0;
+    }
+
+    QueryEditor TextArea:focus {
+        scrollbar-size-vertical: 1;
     }
     """
 
@@ -69,3 +74,8 @@ class QueryEditor(Container):
 
     def set_busy(self, is_busy: bool) -> None:
         self.query_one("#query-input", TextArea).disabled = is_busy
+
+    def clear(self) -> None:
+        """Clear the query editor."""
+        editor = self.query_one("#query-input", TextArea)
+        editor.text = ""

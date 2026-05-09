@@ -22,6 +22,7 @@ from .exceptions import (
 )
 from .graph import Neo4jAdapter
 from .models import (
+    AIAnalysisResult,
     ConnectionConfig,
     PlanNode,
     QueryAnalysisReport,
@@ -53,6 +54,7 @@ from .timeseries import InfluxDBAdapter
 
 __all__ = [
     # Models
+    "AIAnalysisResult",
     "ConnectionConfig",
     "PlanNode",
     "QueryAnalysisReport",
