@@ -8,10 +8,9 @@ and use CockroachDBParser for CRDB-specific optimizations:
 - Minimal metrics (no admin-only queries in v1)
 """
 
-import json
 import logging
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Any
 
 import psycopg2
 from psycopg2 import OperationalError
@@ -218,7 +217,7 @@ class CockroachDBAdapter(BaseAdapter):
             # Extract first line of text plan
             first_line = explain_data.split("\n")[0] if explain_data else "Unknown"
             return first_line.strip()
-        
+
         return "Unknown plan"
 
     def _detect_crdb_specific_issues(self, plan_text: str, metrics: dict[str, Any]) -> list[str]:

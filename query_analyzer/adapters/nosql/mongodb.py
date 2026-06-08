@@ -210,7 +210,7 @@ class MongoDBAdapter(BaseAdapter):
         """
         executionStages = explain_result.get("executionStages", {})
         stage = executionStages.get("stage", "Unknown")
-        
+
         # Add key information if available
         if "executionStages" in executionStages:
             substages = executionStages.get("executionStages", [])
@@ -219,7 +219,7 @@ class MongoDBAdapter(BaseAdapter):
                     first_substage = substages[0].get("stage", "")
                     if first_substage:
                         return f"{stage} → {first_substage}"
-        
+
         return stage
 
     def get_slow_queries(self, threshold_ms: int = 100) -> list[dict]:

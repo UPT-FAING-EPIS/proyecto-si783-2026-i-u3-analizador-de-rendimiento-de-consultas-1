@@ -30,7 +30,7 @@ def _build_screen_with_dependencies(
     monkeypatch.setattr(screen, "query_one", lambda *_args, **_kwargs: status_bar)
 
     fake_app = MagicMock()
-    setattr(screen, "_fake_app", fake_app)
+    screen._fake_app = fake_app
     monkeypatch.setattr(
         ConnectionScreen,
         "app",

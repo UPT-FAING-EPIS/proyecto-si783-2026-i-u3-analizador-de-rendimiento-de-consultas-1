@@ -9,7 +9,6 @@ from textual.widgets import Label, ListItem, ListView, Static
 
 from query_analyzer.adapters.models import AIAnalysisResult
 
-
 # Severity icons for observations
 OBSERVATION_ICONS = {
     "CRITICAL": "[red bold]⚠️ [/red bold]",
@@ -376,7 +375,7 @@ class AIRecommendationsPanel(Container):
                 if code_match:
                     code = code_match.group(1)
                     rec_text = rec[: code_match.start()].strip()
-                    
+
                     sql_syntax = Syntax(
                         code,
                         "sql",
@@ -384,7 +383,7 @@ class AIRecommendationsPanel(Container):
                         line_numbers=False,
                         word_wrap=True,
                     )
-                    
+
                     list_view.append(
                         ListItem(
                             Static(f"{idx}. {rec_text}", classes="rec-title"),

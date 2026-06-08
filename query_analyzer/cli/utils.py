@@ -265,21 +265,21 @@ class OutputFormatter:
             if report.ai_analysis:
                 target_console.print()
                 target_console.print("[bold green]AI ANALYSIS[/bold green]")
-                
+
                 ai = report.ai_analysis
                 if ai.summary:
                     target_console.print(f"[green]Summary:[/green] {ai.summary}")
-                
+
                 if ai.observations:
-                    target_console.print(f"[green]Observations:[/green]")
+                    target_console.print("[green]Observations:[/green]")
                     for obs in ai.observations:
                         target_console.print(f"  • {obs}")
-                
+
                 if ai.recommendations:
-                    target_console.print(f"[green]AI Recommendations:[/green]")
+                    target_console.print("[green]AI Recommendations:[/green]")
                     for i, rec in enumerate(ai.recommendations, 1):
                         target_console.print(f"  {i}. {rec}")
-                
+
                 target_console.print()
 
             # Metrics section
