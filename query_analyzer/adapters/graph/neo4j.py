@@ -225,11 +225,11 @@ class Neo4jAdapter(BaseAdapter):
 
         operator_type = plan_root.get("operatorType", "Unknown")
         rows = plan_root.get("rows", 0)
-        
+
         summary = f"{operator_type}"
         if rows > 0:
             summary += f" ({rows} rows)"
-        
+
         return summary
 
     def _build_plan_tree_from_neo4j(self, plan_root: dict[str, Any]) -> PlanNode | None:

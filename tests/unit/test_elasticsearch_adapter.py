@@ -218,8 +218,8 @@ class TestElasticsearchAdapter:
         report = adapter.execute_explain(query_str)
 
         assert report.engine == "elasticsearch"
-        assert len(report.warnings) > 0
-        assert any(w.severity in ["high", "critical"] for w in report.warnings)
+        assert report.metrics["query_type"] == "match_all"
+        assert report.metrics["has_filter"] is False
 
     @patch("query_analyzer.adapters.elasticsearch.Elasticsearch")
     def test_execute_explain_with_wildcard(
@@ -239,8 +239,8 @@ class TestElasticsearchAdapter:
         query_str = '{"wildcard": {"title": {"value": "test*"}}}'
         report = adapter.execute_explain(query_str)
 
-        assert len(report.warnings) > 0
-        assert any(w.severity in ["high", "medium"] for w in report.warnings)
+        assert report.metrics["query_type"] == "wildcard"
+        assert report.raw_plan is not None
 
     @patch("query_analyzer.adapters.elasticsearch.Elasticsearch")
     def test_execute_explain_with_script(
@@ -260,8 +260,8 @@ class TestElasticsearchAdapter:
         query_str = '{"script_score": {"query": {"match_all": {}}}}'
         report = adapter.execute_explain(query_str)
 
-        assert len(report.warnings) > 0
-        assert any(w.severity in ["high", "medium"] for w in report.warnings)
+        assert report.metrics["query_type"] == "script_score"
+        assert report.raw_plan is not None
 
     @patch("query_analyzer.adapters.elasticsearch.Elasticsearch")
     def test_execute_explain_invalid_json(

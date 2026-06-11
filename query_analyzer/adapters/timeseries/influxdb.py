@@ -69,13 +69,19 @@ class InfluxDBAdapter(BaseAdapter):
             port = self._config.port or 8086
             token = self._config.password or "invalid_token"  # API token for InfluxDB 2.x
             org = self._config.extra.get("org", "")  # Organization (optional)
-            timeout = self._config.extra.get("connection_timeout", 10)
+            timeout_seconds = float(self._config.extra.get("connection_timeout", 10))
 
             logger.debug(f"Connect: org={org!r}, extra={self._config.extra}")
 
             url = f"http://{host}:{port}"
 
-            self._connection = InfluxDBClient(url=url, token=token, org=org, timeout=timeout)
+            # influxdb-client expects milliseconds, while the shared config uses seconds.
+            self._connection = InfluxDBClient(
+                url=url,
+                token=token,
+                org=org,
+                timeout=int(timeout_seconds * 1000),
+            )
 
             health = self._connection.health()
             if health.status != "pass":
@@ -236,11 +242,6 @@ class InfluxDBAdapter(BaseAdapter):
             # STEP 4: NORMALIZATION
             normalized_plan = self.parser.normalize_plan(parsed)
 
-            # STEP 5: NO ANTI-PATTERN DETECTION
-            # Analysis only via execution metrics (v2.0.0)
-            warnings = []
-            recommendations = []
-
             # Ensure execution_time_ms is > 0
             if execution_time_ms <= 0:
                 execution_time_ms = 0.1
@@ -248,7 +249,7 @@ class InfluxDBAdapter(BaseAdapter):
             # Generate simple plan summary
             plan_summary = self._summarize_plan(parsed)
 
-            # STEP 6: REPORT BUILDING (no score, no anti-patterns)
+            # STEP 5: REPORT BUILDING
             return QueryAnalysisReport(
                 engine="influxdb",
                 query=query,

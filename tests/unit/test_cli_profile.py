@@ -3,6 +3,7 @@
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from typer.testing import CliRunner
@@ -238,22 +239,65 @@ def test_profile_test_not_found(cli_manager: ConfigManager) -> None:
     assert "no encontrado" in result.stdout
 
 
-def test_profile_test_shows_info(cli_manager: ConfigManager, sample_profile: ProfileConfig) -> None:
+def test_profile_test_shows_info(
+    cli_manager: ConfigManager, sample_profile: ProfileConfig, monkeypatch
+) -> None:
     """Verifica que test muestra información del perfil."""
     cli_manager.add_profile("test", sample_profile)
+    adapter = MagicMock()
+    adapter.test_connection.return_value = True
+
+    # Mock network to avoid actual connections in unit test
+    import socket
+
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 5432))],
+    )
+    monkeypatch.setattr("socket.socket", lambda *args, **kwargs: MagicMock())
+
+    monkeypatch.setattr(
+        "query_analyzer.core.connection_diagnostics.AdapterRegistry.is_registered",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        "query_analyzer.core.connection_diagnostics.AdapterRegistry.create",
+        lambda *_args, **_kwargs: adapter,
+    )
 
     result = runner.invoke(app, ["profile", "test", "test"])
 
     assert result.exit_code == 0
-    # Debe mostrar información
-    assert "test" in result.stdout or "postgresql" in result.stdout
+    assert "Connection successful" in result.stdout
+    adapter.connect.assert_called_once()
+    adapter.disconnect.assert_called_once()
 
 
 def test_profile_test_no_password_visible(
-    cli_manager: ConfigManager, sample_profile: ProfileConfig
+    cli_manager: ConfigManager, sample_profile: ProfileConfig, monkeypatch
 ) -> None:
     """Verifica que test no muestra password."""
     cli_manager.add_profile("test", sample_profile)
+    adapter = MagicMock()
+    adapter.test_connection.return_value = True
+
+    # Mock network to avoid actual connections in unit test
+    import socket
+
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 5432))],
+    )
+    monkeypatch.setattr("socket.socket", lambda *args, **kwargs: MagicMock())
+
+    monkeypatch.setattr(
+        "query_analyzer.core.connection_diagnostics.AdapterRegistry.is_registered",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        "query_analyzer.core.connection_diagnostics.AdapterRegistry.create",
+        lambda *_args, **_kwargs: adapter,
+    )
 
     result = runner.invoke(app, ["profile", "test", "test"])
 

@@ -253,10 +253,11 @@ class TestCockroachDBAdapterExplain:
         assert isinstance(report, QueryAnalysisReport)
         assert report.engine == "cockroachdb"
         assert report.query == "SELECT * FROM test"
-        assert 0 <= report.score <= 100
+        assert report.execution_time_ms > 0
+        assert report.metrics
 
-    def test_execute_explain_json_fallback_to_text(self):
-        """execute_explain() falls back to text when JSON fails."""
+    def test_execute_explain_uses_verbose_analyze(self):
+        """execute_explain() captures the verbose engine plan."""
         config = ConnectionConfig(
             engine="cockroachdb",
             host="localhost",
@@ -268,14 +269,7 @@ class TestCockroachDBAdapterExplain:
         adapter = CockroachDBAdapter(config)
         adapter._is_connected = True
 
-        # Mock cursor: first call (DISTSQL) fails, second call (JSON) fails, third call (text) succeeds
         mock_cursor = MagicMock()
-        mock_cursor.execute.side_effect = [
-            Exception("DISTSQL not supported"),  # DISTSQL fails
-            Exception("JSON format not supported"),  # JSON fails
-            None,  # Text succeeds
-        ]
-        mock_cursor.fetchone.return_value = None  # No JSON result
         mock_cursor.fetchall.return_value = [("Seq Scan",), ("Full scan",)]
 
         mock_conn = MagicMock()
@@ -288,11 +282,11 @@ class TestCockroachDBAdapterExplain:
         report = adapter.execute_explain("SELECT * FROM test")
 
         assert isinstance(report, QueryAnalysisReport)
-        # Verify fallback happened by checking execute called three times (DISTSQL, JSON, ANALYZE)
-        assert mock_cursor.execute.call_count == 3
+        assert mock_cursor.execute.call_count == 1
+        assert report.plan_summary
 
-    def test_execute_explain_detects_full_scan_warning(self):
-        """execute_explain() detects full scan in text output."""
+    def test_execute_explain_preserves_full_scan_text(self):
+        """execute_explain() preserves full scan text as engine output."""
         config = ConnectionConfig(
             engine="cockroachdb",
             host="localhost",
@@ -304,20 +298,8 @@ class TestCockroachDBAdapterExplain:
         adapter = CockroachDBAdapter(config)
         adapter._is_connected = True
 
-        # Mock cursor: DISTSQL fails, JSON fails, text succeeds
         mock_cursor = MagicMock()
-
-        # Track which execute() call we're on
-        def execute_side_effect(query):
-            if "DISTSQL" in query:
-                raise Exception("DISTSQL not supported")
-            elif "FORMAT JSON" in query:
-                raise Exception("JSON parsing failed")
-            # Text format succeeds
-
-        mock_cursor.execute.side_effect = execute_side_effect
-        mock_cursor.fetchall.return_value = [("Seq Scan on large_table",), ("Full scan",)]
-        mock_cursor.fetchone.return_value = None
+        mock_cursor.fetchall.return_value = [("• full scan on large_table",)]
 
         mock_conn = MagicMock()
         mock_conn.cursor = MagicMock(return_value=mock_cursor)
@@ -328,15 +310,11 @@ class TestCockroachDBAdapterExplain:
 
         report = adapter.execute_explain("SELECT * FROM large_table")
 
-        # Should have at least one warning
-        assert len(report.warnings) > 0
-        # At least one should mention "full" or "scan"
-        assert any(
-            "full" in w.message.lower() or "scan" in w.message.lower() for w in report.warnings
-        )
+        assert report.raw_plan is not None
+        assert report.plan_summary == "full scan on large_table"
 
-    def test_execute_explain_detects_cross_region_warning(self):
-        """execute_explain() detects cross-region full scan (CRITICAL)."""
+    def test_execute_explain_preserves_distributed_text(self):
+        """execute_explain() preserves distributed execution text."""
         config = ConnectionConfig(
             engine="cockroachdb",
             host="localhost",
@@ -374,10 +352,8 @@ class TestCockroachDBAdapterExplain:
 
         report = adapter.execute_explain("SELECT * FROM global_table")
 
-        # Should have cross-region warning
-        assert len(report.warnings) > 0
-        # Check for CRITICAL warning
-        assert any("critical" in w.message.lower() for w in report.warnings)
+        assert report.plan_summary
+        assert report.execution_time_ms > 0
 
 
 class TestCockroachDBAdapterMetrics:

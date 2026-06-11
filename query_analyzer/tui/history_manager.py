@@ -86,11 +86,7 @@ class HistoryManager:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, list):
                 raise ValueError("History file must contain a list")
-            return [
-                self._deserialize_record(item)
-                for item in payload
-                if isinstance(item, dict)
-            ]
+            return [self._deserialize_record(item) for item in payload if isinstance(item, dict)]
         except Exception:
             broken = path.with_name(
                 f"{path.stem}.broken-{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

@@ -18,7 +18,6 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -195,10 +194,10 @@ Be specific, mention table names and operation types. Focus on what the query ac
         """
         try:
             import requests
-        except ImportError:
+        except ImportError as error:
             raise ImportError(
                 "requests library required for AI analysis. Install with: pip install requests"
-            )
+            ) from error
 
         # Construir headers
         headers = {
@@ -213,12 +212,11 @@ Be specific, mention table names and operation types. Focus on what the query ac
                 {
                     "role": "system",
                     "content": "You are an expert database performance analyst. Provide concise, actionable insights.",
-                }
-                ,
+                },
                 {
                     "role": "user",
                     "content": prompt,
-                }
+                },
             ],
             "temperature": 0.3,  # Bajo para respuestas consistentes
             "max_tokens": 1000,
@@ -243,12 +241,14 @@ Be specific, mention table names and operation types. Focus on what the query ac
             content = data["choices"][0].get("message", {}).get("content", "")
             return content if content else None
 
-        except requests.exceptions.Timeout:
-            raise TimeoutError(f"AI provider timeout after 30s")
+        except requests.exceptions.Timeout as error:
+            raise TimeoutError("AI provider timeout after 30s") from error
         except requests.exceptions.HTTPError as e:
-            raise Exception(f"AI provider error: {e.response.status_code} - {e.response.text}")
+            raise RuntimeError(
+                f"AI provider error: {e.response.status_code} - {e.response.text}"
+            ) from e
         except Exception as e:
-            raise Exception(f"Failed to call AI provider: {e}")
+            raise RuntimeError(f"Failed to call AI provider: {e}") from e
 
     def _parse_response(self, response: str) -> AIAnalysisResult:
         """Parsea la respuesta de la IA.

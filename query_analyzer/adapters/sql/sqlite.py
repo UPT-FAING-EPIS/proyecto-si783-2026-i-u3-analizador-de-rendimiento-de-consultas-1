@@ -166,7 +166,11 @@ class SQLiteAdapter(BaseAdapter):
             parsed_plan = self.parser.parse(explain_text)
 
             # Build plan tree for visual representation
-            plan_tree = build_plan_tree(parsed_plan)
+            # Use normalized plan (not raw parser dict) to avoid list-valued properties
+            # that cause Rich markup errors in the TUI renderer.
+            nodes = parsed_plan.get("nodes", [])
+            normalized = self._build_normalized_plan_from_nodes(nodes) if nodes else {}
+            plan_tree = build_plan_tree(normalized) if normalized else None
 
             # Generate simple plan summary
             plan_summary = self._summarize_plan(parsed_plan)
@@ -219,7 +223,7 @@ class SQLiteAdapter(BaseAdapter):
 
         if detail:
             return f"{node_type}: {detail}"
-        return node_type
+        return str(node_type)
 
     def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
         """Get slow queries (not supported in SQLite).
@@ -430,7 +434,7 @@ class SQLiteAdapter(BaseAdapter):
         """Build a normalized plan from SQLite EXPLAIN QUERY PLAN nodes.
 
         SQLite returns a flat list of nodes. This converts them to a tree structure
-        compatible with AntiPatternDetector.
+        compatible with the shared plan representation.
 
         Args:
             nodes: List of parsed nodes from SQLiteParser

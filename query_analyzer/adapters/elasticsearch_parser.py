@@ -7,7 +7,7 @@ class ElasticsearchParser:
     """Parser for Elasticsearch _profile output and query analysis.
 
     Analyzes search profiles from Elasticsearch _profile API to extract
-    execution metrics, query structure, and identify performance anti-patterns.
+    execution metrics and query structure.
 
     The _profile API provides detailed execution information broken down into:
     - query: Time spent building/executing the query

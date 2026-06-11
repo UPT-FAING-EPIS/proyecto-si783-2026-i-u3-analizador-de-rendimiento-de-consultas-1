@@ -1,24 +1,18 @@
-"""MySQL EXPLAIN plan parser and analyzer."""
+"""MySQL EXPLAIN plan parser."""
 
 import json
-import re
 from typing import Any
 
 
 class MySQLExplainParser:
     """Parseador especializado para salidas EXPLAIN de MySQL.
 
-    Analiza planes de ejecución en formato JSON (EXPLAIN FORMAT=JSON) para
-    extraer patrones de acceso a datos y detectar anti-patrones de rendimiento.
-    Identifica problemas comunes como full table scans, uso de filesort,
-    creación de tablas temporales, y calcula una puntuación de optimización
-    (0-100) basada en la estructura del plan.
+    Analiza planes de ejecución en formato JSON (EXPLAIN FORMAT=JSON) y
+    extrae la estructura y métricas observadas por el motor.
 
     Métodos principales:
         - parse(): Parsea JSON de EXPLAIN y extrae métricas
-        - identify_warnings(): Detecta anti-patrones
-        - generate_recommendations(): Sugiere optimizaciones
-        - calculate_score(): Genera puntuación 0-100
+        - normalize_plan(): Unifica la estructura para la interfaz
     """
 
     def parse(self, json_output: str) -> dict[str, Any]:
@@ -143,114 +137,11 @@ class MySQLExplainParser:
             }
         )
 
-    def identify_warnings(self, parsed_plan: dict[str, Any]) -> list[str]:
-        """Identify performance warnings in the execution plan.
-
-        ⚠️ DEPRECATED (v1.0): This method is superseded by AntiPatternDetector.analyze().
-        For new code, use AntiPatternDetector directly. This method will be removed in v2.0.
-
-        Args:
-            parsed_plan: Parsed EXPLAIN output from parse()
-
-        Returns:
-            List of warning messages describing performance issues
-        """
-        warnings = []
-
-        full_scan_tables = [
-            t["table_name"] for t in parsed_plan.get("tables_accessed", []) if t.get("is_full_scan")
-        ]
-        if full_scan_tables:
-            for table in full_scan_tables:
-                warnings.append(
-                    f"Full table scan detected on '{table}': type=ALL. "
-                    "This scans entire table without using an index."
-                )
-
-        if parsed_plan.get("has_using_filesort"):
-            warnings.append(
-                "Using filesort: MySQL cannot use an index for ORDER BY "
-                "and must perform an extra sort pass."
-            )
-
-        if parsed_plan.get("has_using_temporary"):
-            warnings.append(
-                "Using temporary table: MySQL must create a temporary table "
-                "for GROUP BY or DISTINCT, often impacting performance."
-            )
-
-        return warnings
-
-    def generate_recommendations(self, warnings: list[str]) -> list[str]:
-        """Generate optimization recommendations based on identified warnings.
-
-        ⚠️ DEPRECATED (v1.0): This method is superseded by AntiPatternDetector.analyze().
-        For new code, use AntiPatternDetector directly. This method will be removed in v2.0.
-
-        Args:
-            warnings: List of warning messages from identify_warnings()
-
-        Returns:
-            List of actionable optimization recommendations
-        """
-        recommendations = []
-
-        for warning in warnings:
-            if "Full table scan" in warning:
-                table_match = re.search(r"'([^']+)'", warning)
-                if table_match:
-                    table = table_match.group(1)
-                    recommendations.append(
-                        f"Add or improve index on WHERE clause columns for table '{table}'"
-                    )
-                else:
-                    recommendations.append(
-                        "Add index on WHERE clause columns to avoid full table scan"
-                    )
-
-            elif "Using filesort" in warning:
-                recommendations.append("Create index on ORDER BY columns to avoid external sort")
-
-            elif "Using temporary" in warning:
-                recommendations.append(
-                    "Optimize GROUP BY/DISTINCT query or add appropriate indexes"
-                )
-
-        return recommendations
-
-    def calculate_score(self, parsed_plan: dict[str, Any], warnings: list[str]) -> int:
-        """Calculate optimization score for the query plan.
-
-        ⚠️ DEPRECATED (v1.0): This method is superseded by AntiPatternDetector.analyze().
-        For new code, use AntiPatternDetector directly. This method will be removed in v2.0.
-
-        Args:
-            parsed_plan: Parsed EXPLAIN output from parse()
-            warnings: List of warnings from identify_warnings()
-
-        Returns:
-            Score between 0 and 100, where 100 is optimal
-        """
-        score = 100
-
-        full_scan_count = sum(
-            1 for t in parsed_plan.get("tables_accessed", []) if t.get("is_full_scan")
-        )
-        score -= full_scan_count * 30
-
-        if parsed_plan.get("has_using_temporary"):
-            score -= 20
-
-        if parsed_plan.get("has_using_filesort"):
-            score -= 15
-
-        return max(0, min(100, score))
-
     def normalize_plan(self, plan: dict) -> dict:
         """Convert MySQL EXPLAIN plan to normalized format (engine-agnostic).
 
         Converts MySQL EXPLAIN FORMAT=JSON plan structure to a normalized format that can be
-        used by the AntiPatternDetector, which is independent of the SQL engine.
+        used by renderers and integrations independently of the SQL engine.
 
         Args:
             plan: EXPLAIN output dictionary from MySQL

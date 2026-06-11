@@ -6,6 +6,7 @@ from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import Container, Vertical
+from textual.markup import escape as markup_escape
 from textual.widgets import Label, Static
 
 from query_analyzer.adapters.models import PlanNode
@@ -64,18 +65,6 @@ class MetricsPanel(Container):
         color: $text;
     }
 
-    MetricsPanel .metric-good {
-        color: $success;
-    }
-
-    MetricsPanel .metric-warning {
-        color: $warning;
-    }
-
-    MetricsPanel .metric-danger {
-        color: $error;
-    }
-
     MetricsPanel .no-data {
         color: $text-muted;
         text-style: italic;
@@ -92,21 +81,27 @@ class MetricsPanel(Container):
         self,
         execution_time_ms: float,
         plan_tree: PlanNode | None,
+        observed_metrics: dict[str, Any] | None = None,
     ) -> None:
         """Extract and render execution metrics from plan.
 
         Args:
             execution_time_ms: Total execution time in milliseconds
             plan_tree: Root node of execution plan tree
+            observed_metrics: Metrics returned directly by the adapter
         """
         metrics_content = self.query_one("#metrics-content", Static)
 
         try:
             metrics = self._extract_metrics(execution_time_ms, plan_tree)
+            if observed_metrics:
+                metrics["engine_metrics"] = observed_metrics
             lines = self._format_metrics(metrics)
             metrics_content.update("\n".join(lines))
         except Exception as e:
-            metrics_content.update(f"[yellow]Error analyzing metrics: {e}[/yellow]")
+            metrics_content.update(
+                f"[yellow]Error analyzing metrics: {markup_escape(str(e))}[/yellow]"
+            )
 
     def set_loading_state(self) -> None:
         """Show loading state."""
@@ -155,9 +150,7 @@ class MetricsPanel(Container):
         }
 
         if plan_tree:
-            metrics.update(
-                MetricsPanel._traverse_plan_tree(plan_tree, metrics, depth=0)
-            )
+            metrics.update(MetricsPanel._traverse_plan_tree(plan_tree, metrics, depth=0))
 
         return metrics
 
@@ -216,9 +209,7 @@ class MetricsPanel(Container):
             and node.estimated_rows is not None
             and node.estimated_rows > 0
         ):
-            divergence = abs(
-                (node.actual_rows - node.estimated_rows) / node.estimated_rows
-            )
+            divergence = abs((node.actual_rows - node.estimated_rows) / node.estimated_rows)
             if metrics["rows_divergence"] is None:
                 metrics["rows_divergence"] = divergence
             else:
@@ -229,6 +220,50 @@ class MetricsPanel(Container):
             MetricsPanel._traverse_plan_tree(child, metrics, depth + 1)
 
         return metrics
+
+    @staticmethod
+    def _flatten_metrics(val: Any, prefix: str = "") -> dict[str, Any]:
+        """Flattens nested dicts/lists into a flat dictionary with dot notation.
+
+        Args:
+            val: The value to flatten (usually dict or list).
+            prefix: The current prefix for keys.
+
+        Returns:
+            Flat dictionary of key-value pairs.
+        """
+        flat: dict[str, Any] = {}
+        if isinstance(val, dict):
+            for k, v in val.items():
+                key = f"{prefix}.{k}" if prefix else k
+                flat.update(MetricsPanel._flatten_metrics(v, key))
+        elif isinstance(val, list):
+            for idx, item in enumerate(val):
+                key = f"{prefix}[{idx}]"
+                flat.update(MetricsPanel._flatten_metrics(item, key))
+        else:
+            flat[prefix] = val
+        return flat
+
+    @staticmethod
+    def _format_metric_value(val: Any) -> str:
+        """Formats a metric value to be clearly differentiable for 0, False, None, and empty strings.
+
+        Args:
+            val: The metric value.
+
+        Returns:
+            A string representation of the formatted value.
+        """
+        if val is None:
+            return "No disponible"
+        if val is False:
+            return "False"
+        if val is True:
+            return "True"
+        if val == "":
+            return '"" (cadena vacía)'
+        return str(val)
 
     @staticmethod
     def _format_metrics(metrics: dict[str, Any]) -> list[str]:
@@ -242,15 +277,9 @@ class MetricsPanel(Container):
         """
         lines = []
 
-        # Execution time
+        # Execution time is factual; no subjective thresholds or colors.
         exec_time = metrics.get("execution_time_ms", 0)
-        if exec_time < 100:
-            color = "$success"
-        elif exec_time < 1000:
-            color = "$warning"
-        else:
-            color = "$error"
-        lines.append(f"Exec Time: [{color}]{exec_time:.2f} ms[/{color}]")
+        lines.append(f"Exec Time: [cyan]{exec_time:.2f} ms[/cyan]")
 
         # Rows examined
         rows_examined = metrics.get("total_rows_examined", 0)
@@ -269,40 +298,46 @@ class MetricsPanel(Container):
         # Plan nodes
         node_count = metrics.get("node_count", 0)
         if node_count > 0:
-            lines.append(f"Nodes:    [blue]{node_count}[/blue]")
+            lines.append(f"Nodes:    [cyan]{node_count}[/cyan]")
 
         # Joins
         join_count = metrics.get("join_count", 0)
         if join_count > 0:
-            lines.append(f"Joins:    [yellow]{join_count}[/yellow]")
+            lines.append(f"Joins:    [cyan]{join_count}[/cyan]")
 
         # Sorts
         sort_count = metrics.get("sort_count", 0)
         if sort_count > 0:
-            lines.append(f"Sorts:    [yellow]{sort_count}[/yellow]")
+            lines.append(f"Sorts:    [cyan]{sort_count}[/cyan]")
 
         # Indexes
         index_count = metrics.get("index_count", 0)
         if index_count > 0:
-            lines.append(f"Indexes:  [green]{index_count}[/green]")
+            lines.append(f"Indexes:  [cyan]{index_count}[/cyan]")
 
-        # Rows divergence (estimated vs actual)
+        # Rows divergence is a mathematical comparison, not a quality rating.
         divergence = metrics.get("rows_divergence")
         if divergence is not None:
-            if divergence < 0.1:
-                color = "$success"
-            elif divergence < 0.5:
-                color = "$warning"
-            else:
-                color = "$error"
-            lines.append(
-                f"Divergence: [{color}]{divergence * 100:.1f}%[/{color}]"
-            )
+            lines.append(f"Divergence: [cyan]{divergence * 100:.1f}%[/cyan]")
 
         # Tree depth
         max_depth = metrics.get("max_depth", 0)
         if max_depth > 0:
-            lines.append(f"Depth:    [magenta]{max_depth}[/magenta]")
+            lines.append(f"Depth:    [cyan]{max_depth}[/cyan]")
+
+        observed = metrics.get("engine_metrics", {})
+        if observed:
+            lines.append("")
+            lines.append("[bold]Engine metrics[/bold]")
+            # Flatten the nested dictionary or list
+            flat_observed = MetricsPanel._flatten_metrics(observed)
+            # Sort keys alphabetically
+            for key in sorted(flat_observed.keys()):
+                val = flat_observed[key]
+                formatted_val = MetricsPanel._format_metric_value(val)
+                lines.append(
+                    f"{markup_escape(str(key))}: [cyan]{markup_escape(formatted_val)}[/cyan]"
+                )
 
         if not lines:
             lines.append("[dim]No metrics available[/dim]")

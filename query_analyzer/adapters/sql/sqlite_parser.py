@@ -166,110 +166,6 @@ class SQLiteExplainParser:
             "is_full_scan": False,
         }
 
-    def identify_warnings(self, parsed_plan: dict[str, Any]) -> list[str]:
-        """Identify query optimization issues.
-
-        ⚠️ DEPRECATED (v1.0): This method is superseded by AntiPatternDetector.analyze().
-        For new code, use AntiPatternDetector directly. This method will be removed in v2.0.
-
-        Args:
-            parsed_plan: Output from parse()
-
-        Returns:
-            List of warning messages
-        """
-        warnings = []
-
-        if parsed_plan["full_scan_tables"]:
-            for table in parsed_plan["full_scan_tables"]:
-                warnings.append(f"Full table scan on '{table}' - Consider adding an index")
-
-        if (
-            parsed_plan["scan_count"] > 0
-            and parsed_plan["search_count"] == 0
-            and parsed_plan["total_nodes"] > 1
-        ):
-            warnings.append("Query uses only full table scans without index optimization")
-
-        if parsed_plan["scan_count"] > 0 and parsed_plan["search_count"] > 0:
-            warnings.append(
-                "Mixed scan and search operations - Some tables are not properly indexed"
-            )
-
-        return warnings
-
-    def generate_recommendations(self, warnings: list[str]) -> list[str]:
-        """Generate actionable recommendations based on warnings.
-
-        ⚠️ DEPRECATED (v1.0): This method is superseded by AntiPatternDetector.analyze().
-        For new code, use AntiPatternDetector directly. This method will be removed in v2.0.
-
-        Args:
-            warnings: List from identify_warnings()
-
-        Returns:
-            List of recommendation strings
-        """
-        recommendations = []
-
-        if not warnings:
-            recommendations.append("Query is well-optimized with proper indexing")
-            return recommendations
-
-        for warning in warnings:
-            if "Full table scan" in warning:
-                match = re.search(r"on '(\w+)'", warning)
-                if match:
-                    table = match.group(1)
-                    recommendations.append(
-                        f"Add an index on the WHERE clause column(s) of table '{table}'"
-                    )
-
-            if "Mixed scan and search" in warning:
-                recommendations.append(
-                    "Review index strategy - ensure all joined tables use indexes"
-                )
-
-            if "only full table scans" in warning:
-                recommendations.append(
-                    "Add indexes on columns used in WHERE clauses and JOIN conditions"
-                )
-
-        return recommendations
-
-    def calculate_score(self, parsed_plan: dict[str, Any], warnings: list[str]) -> int:
-        """Calculate optimization score (0-100).
-
-        ⚠️ DEPRECATED (v1.0): This method is superseded by AntiPatternDetector.analyze().
-        For new code, use AntiPatternDetector directly. This method will be removed in v2.0.
-
-        Scoring logic:
-        - Base: 100
-        - Full scan without index: -35 per scan
-        - Multiple scans: -20
-        - Mix of scans/searches: -20
-        - Perfect (all indexed): +0
-
-        Args:
-            parsed_plan: Output from parse()
-            warnings: Output from identify_warnings()
-
-        Returns:
-            Integer score 0-100
-        """
-        score = 100
-
-        if parsed_plan["full_scan_tables"]:
-            score -= min(35, 35 * len(parsed_plan["full_scan_tables"]))
-
-        if parsed_plan["scan_count"] > 1:
-            score -= 20
-
-        if parsed_plan["scan_count"] > 0 and parsed_plan["search_count"] > 0:
-            score -= 20
-
-        return max(0, min(100, score))
-
     def _empty_plan(self) -> dict[str, Any]:
         """Return empty plan structure."""
         return {
@@ -286,7 +182,7 @@ class SQLiteExplainParser:
         """Convert SQLite EXPLAIN QUERY PLAN text to normalized format (engine-agnostic).
 
         Converts SQLite text-based EXPLAIN QUERY PLAN output to a normalized format that can be
-        used by the AntiPatternDetector, which is independent of the SQL engine.
+        used by renderers and integrations independently of the SQL engine.
 
         SQLite EXPLAIN format example:
         "0|0|0 SCAN TABLE customers (~100 rows)"

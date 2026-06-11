@@ -126,19 +126,17 @@ class BaseAdapter(ABC):
         """Ejecuta EXPLAIN PLAN en la query y retorna un análisis detallado.
 
         Debe:
-        1. Validar que la query sea SQL válida
+        1. Validar que la consulta sea compatible con el motor
         2. Ejecutar EXPLAIN (o equivalente del motor)
         3. Parsear el plan de ejecución
-        4. Calcular score de optimización (0-100)
-        5. Generar warnings y recomendaciones
-        6. Retornar QueryAnalysisReport completo
+        4. Extraer métricas observables del motor
+        5. Retornar QueryAnalysisReport completo
 
         Args:
-            query: Consulta SQL a analizar (SELECT, INSERT, UPDATE, DELETE)
+            query: Consulta de solo lectura a analizar
 
         Returns:
-            QueryAnalysisReport con análisis completo incluyendo plan,
-            score, warnings y recomendaciones
+            QueryAnalysisReport con plan, resumen y métricas observables
 
         Raises:
             QueryAnalysisError: Si falla la ejecución o parseo

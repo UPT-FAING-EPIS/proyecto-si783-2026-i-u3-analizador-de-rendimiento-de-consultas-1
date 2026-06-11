@@ -7,6 +7,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from query_analyzer.adapters import QueryAnalysisReport
+from query_analyzer.adapters.serializer import ReportSerializer
+from query_analyzer.cli.terminal_config import get_terminal_width
 from query_analyzer.config import ProfileConfig
 
 console = Console()
@@ -21,6 +23,19 @@ def truncate_text(text: str, max_width: int = 80) -> str:
 
 class OutputFormatter:
     """Formatea output para CLI con estilos."""
+
+    @staticmethod
+    def truncate_adaptive(
+        text: str,
+        max_width: int,
+        min_visible: int = 0,
+        suffix: str = "...",
+    ) -> str:
+        """Truncate text while preserving a useful visible prefix."""
+        if len(text) <= max_width:
+            return text
+        visible = max(min_visible, max_width - len(suffix))
+        return text[:visible] + suffix
 
     @staticmethod
     def mask_password(password: str, visible_chars: int = 2) -> str:
@@ -149,82 +164,42 @@ class OutputFormatter:
             return json.dumps(
                 report.to_dict() if hasattr(report, "to_dict") else str(report), indent=2
             )
-        else:
-            return str(report)
+        elif format == "markdown":
+            return ReportSerializer.to_markdown(report)
+        return str(report)
 
     @staticmethod
     def _format_report_rich(report: QueryAnalysisReport) -> str:
-        """Format report using Rich with Panel header.
-
-        Args:
-            report: QueryAnalysisReport to format
-
-        Returns:
-            Rich-formatted string
-        """
-        lines = []
-
-        # Header panel - let Rich handle wrapping naturally
-        score_emoji = "🟢" if report.score >= 70 else "🟡" if report.score >= 50 else "🔴"
+        """Format observed engine data for a terminal."""
+        width = get_terminal_width()
         header_content = (
-            f"[cyan]Engine:[/cyan] [bold]{report.engine}[/bold]\n"
-            f"[cyan]Score:[/cyan] [bold]{score_emoji} {report.score}/100[/bold]\n"
+            f"[cyan]Engine:[/cyan] [bold]{report.engine.upper()}[/bold]\n"
             f"[cyan]Execution Time:[/cyan] {report.execution_time_ms:.2f} ms\n"
-            f"[cyan]Query:[/cyan] {report.query}"
+            f"[cyan]Plan:[/cyan] {report.plan_summary or 'Not available'}\n"
+            f"[cyan]Query:[/cyan] {OutputFormatter.truncate_adaptive(report.query, width - 12)}"
         )
-
-        panel = Panel(header_content, title="QUERY ANALYSIS REPORT", expand=True)
         buffer = StringIO()
-        panel_console = Console(file=buffer, force_terminal=True, width=80)
-        panel_console.print(panel)
-        lines.append(buffer.getvalue().rstrip())
+        render_console = Console(file=buffer, force_terminal=True, width=width)
+        render_console.print(Panel(header_content, title="OBSERVED EXECUTION DATA", expand=True))
 
-        # Warnings section
-        if report.warnings:
-            lines.append("")
-            lines.append(f"[bold yellow]⚠️  WARNINGS ({len(report.warnings)})[/bold yellow]")
-            warnings_table = Table(show_header=True, header_style="bold")
-            warnings_table.add_column("Severity", width=10)
-            warnings_table.add_column("Message", no_wrap=False)
-            for w in report.warnings:
-                warnings_table.add_row(w.severity.upper(), w.message)
-            buffer = StringIO()
-            table_console = Console(file=buffer, force_terminal=True, width=80)
-            table_console.print(warnings_table)
-            lines.append(buffer.getvalue().rstrip())
-
-        # Recommendations section
-        if report.recommendations:
-            lines.append("")
-            lines.append(
-                f"[bold cyan]💡 RECOMMENDATIONS ({len(report.recommendations)})[/bold cyan]"
-            )
-            recs_table = Table(show_header=True, header_style="bold")
-            recs_table.add_column("Priority", width=10)
-            recs_table.add_column("Action", no_wrap=False)
-            for r in report.recommendations:
-                priority_emoji = "🔴" if r.priority <= 3 else "🟡" if r.priority <= 7 else "🔵"
-                recs_table.add_row(f"{priority_emoji} {r.priority}", r.title)
-            buffer = StringIO()
-            table_console = Console(file=buffer, force_terminal=True, width=80)
-            table_console.print(recs_table)
-            lines.append(buffer.getvalue().rstrip())
-
-        # Metrics section
         if report.metrics:
-            lines.append("")
-            lines.append("[bold blue]📊 METRICS[/bold blue]")
-            metrics_table = Table(show_header=True, header_style="bold")
-            metrics_table.add_column("Metric", width=20)
-            metrics_table.add_column("Value", width=15)
-            for key, value in list(report.metrics.items())[:5]:
-                metrics_table.add_row(key, str(value))
-            buffer = StringIO()
-            table_console = Console(file=buffer, force_terminal=True, width=80)
-            table_console.print(metrics_table)
-            lines.append(buffer.getvalue().rstrip())
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Metric")
+            table.add_column("Observed value")
+            for key, value in report.metrics.items():
+                table.add_row(str(key), str(value))
+            render_console.print(table)
 
-        return "\n".join(lines)
+        if report.ai_analysis:
+            render_console.print(
+                Panel(
+                    report.ai_analysis.summary,
+                    title="AI INTERPRETATION (NOT ENGINE DATA)",
+                    expand=True,
+                )
+            )
+
+        return buffer.getvalue().rstrip()
 
     @staticmethod
     def print_report(
@@ -265,21 +240,21 @@ class OutputFormatter:
             if report.ai_analysis:
                 target_console.print()
                 target_console.print("[bold green]AI ANALYSIS[/bold green]")
-                
+
                 ai = report.ai_analysis
                 if ai.summary:
                     target_console.print(f"[green]Summary:[/green] {ai.summary}")
-                
+
                 if ai.observations:
-                    target_console.print(f"[green]Observations:[/green]")
+                    target_console.print("[green]Observations:[/green]")
                     for obs in ai.observations:
                         target_console.print(f"  • {obs}")
-                
+
                 if ai.recommendations:
-                    target_console.print(f"[green]AI Recommendations:[/green]")
+                    target_console.print("[green]AI Recommendations:[/green]")
                     for i, rec in enumerate(ai.recommendations, 1):
                         target_console.print(f"  {i}. {rec}")
-                
+
                 target_console.print()
 
             # Metrics section
@@ -294,7 +269,9 @@ class OutputFormatter:
                 target_console.print(metrics_table)
 
             target_console.print()
-            target_console.print("[dim]Note: AI insights available if QA_AI_BASE_URL is configured[/dim]")
+            target_console.print(
+                "[dim]Note: AI insights available if QA_AI_BASE_URL is configured[/dim]"
+            )
         elif format == "json":
             import json
 
@@ -303,5 +280,7 @@ class OutputFormatter:
                 indent=2,
             )
             target_console.print(output)
+        elif format == "markdown":
+            target_console.print(ReportSerializer.to_markdown(report))
         else:
             target_console.print(str(report))

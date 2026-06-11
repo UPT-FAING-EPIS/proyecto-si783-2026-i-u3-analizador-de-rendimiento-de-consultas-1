@@ -12,12 +12,7 @@ from elasticsearch.exceptions import NotFoundError
 from query_analyzer.adapters.base import BaseAdapter
 from query_analyzer.adapters.exceptions import ConnectionError as AdapterConnectionError
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.models import (
-    ConnectionConfig,
-    QueryAnalysisReport,
-    Recommendation,
-    Warning,
-)
+from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
 
 from .elasticsearch_parser import ElasticsearchParser
@@ -125,7 +120,7 @@ class ElasticsearchAdapter(BaseAdapter):
             query: JSON string representing Elasticsearch query DSL
 
         Returns:
-            QueryAnalysisReport with metrics and anti-pattern analysis
+            QueryAnalysisReport with engine plan and observed metrics
 
         Raises:
             QueryAnalysisError: If query execution or analysis fails
@@ -152,12 +147,6 @@ class ElasticsearchAdapter(BaseAdapter):
             # Parse profile response
             parsed_profile = self._parser.parse_profile(cast(dict[str, Any], response))
 
-            # Detect anti-patterns
-            warnings, recommendations = self._detect_anti_patterns(query_dict, parsed_profile)
-
-            # Calculate optimization score (0-100)
-            score = self._calculate_score(warnings, parsed_profile)
-
             # Ensure execution_time_ms is at least 0.1 (can't be 0)
             execution_time = max(0.1, parsed_profile["metrics"]["execution_time_ms"])
 
@@ -166,12 +155,15 @@ class ElasticsearchAdapter(BaseAdapter):
                 query=query,
                 engine="elasticsearch",
                 execution_time_ms=execution_time,
-                score=score,
-                warnings=warnings,
-                recommendations=recommendations,
+                plan_summary=self._build_plan_summary(parsed_profile),
+                raw_plan=parsed_profile,
                 metrics={
                     "took": parsed_profile["metrics"]["took"],
-                    "query_type": parsed_profile["metrics"]["query_type"],
+                    "query_type": (
+                        parsed_profile["metrics"]["query_type"]
+                        if parsed_profile["metrics"]["query_type"] != "unknown"
+                        else self._parser._detect_query_type(query_dict)
+                    ),
                     "has_filter": parsed_profile["has_filter"],
                     "timed_out": parsed_profile["metrics"]["timed_out"],
                 },
@@ -198,17 +190,12 @@ class ElasticsearchAdapter(BaseAdapter):
         Returns:
             QueryAnalysisReport based on query structure analysis
         """
-        warnings, recommendations = self._detect_anti_patterns(query_dict, {})
-
-        score = self._calculate_score(warnings, {})
-
         report = QueryAnalysisReport(
             query=json.dumps(query_dict),
             engine="elasticsearch",
             execution_time_ms=0.1,  # Minimum positive value
-            score=score,
-            warnings=warnings,
-            recommendations=recommendations,
+            plan_summary="Query structure only (index unavailable)",
+            raw_plan=query_dict,
             metrics={
                 "query_type": self._parser._detect_query_type(query_dict),
                 "has_filter": self._parser._has_filter(query_dict),
@@ -219,106 +206,12 @@ class ElasticsearchAdapter(BaseAdapter):
 
         return report
 
-    def _detect_anti_patterns(
-        self, query_dict: dict[str, Any], parsed_profile: dict[str, Any]
-    ) -> tuple[list[Warning], list[Recommendation]]:
-        """Detect anti-patterns in query.
-
-        Args:
-            query_dict: Parsed query dictionary
-            parsed_profile: Parsed profile response
-
-        Returns:
-            Tuple of (warnings list, recommendations list)
-        """
-        warnings: list[Warning] = []
-        recommendations: list[Recommendation] = []
-
-        # Anti-pattern 1: MatchAllQuery without filters
-        query_type = self._parser._detect_query_type(query_dict)
-        has_filter = self._parser._has_filter(query_dict)
-
-        if query_type == "match_all" and not has_filter:
-            warnings.append(
-                Warning(
-                    severity="high",
-                    message="Query matches all documents - no filters applied",
-                )
-            )
-            recommendations.append(
-                Recommendation(
-                    title="Add Query Filters",
-                    description="Add filters or constraints to limit the result set",
-                    priority=2,
-                )
-            )
-
-        # Anti-pattern 2: WildcardQuery
-        if self._parser.has_wildcard_query(query_dict):
-            warnings.append(
-                Warning(
-                    severity="high",
-                    message="Query contains wildcard patterns which are expensive to execute",
-                )
-            )
-            recommendations.append(
-                Recommendation(
-                    title="Replace Wildcard Queries",
-                    description="Use n-gram analyzers or keyword queries instead of wildcards",
-                    priority=3,
-                )
-            )
-
-        # Anti-pattern 3: Script queries
-        if self._parser.has_script_query(query_dict):
-            warnings.append(
-                Warning(
-                    severity="medium",
-                    message="Query contains scripts which are expensive to execute",
-                )
-            )
-            recommendations.append(
-                Recommendation(
-                    title="Optimize Scripts",
-                    description="Use stored scripts or precompute values instead of inline scripts",
-                    priority=4,
-                )
-            )
-
-        return warnings, recommendations
-
-    def _calculate_score(self, warnings: list[Warning], parsed_profile: dict[str, Any]) -> int:
-        """Calculate optimization score (0-100).
-
-        Args:
-            warnings: List of detected warnings
-            parsed_profile: Parsed profile data
-
-        Returns:
-            Score from 0-100
-        """
-        score = 100
-
-        # Deduct points for each warning
-        for warning in warnings:
-            if warning.severity == "critical":
-                score -= 30
-            elif warning.severity == "high":
-                score -= 15
-            elif warning.severity == "medium":
-                score -= 10
-            else:  # low
-                score -= 5
-
-        # Check execution time if available
-        if parsed_profile and "metrics" in parsed_profile:
-            exec_time = parsed_profile["metrics"].get("execution_time_ms", 0)
-            if exec_time > 1000:
-                score -= 20
-            elif exec_time > 100:
-                score -= 10
-
-        return max(0, min(100, score))
+    def _build_plan_summary(self, parsed_profile: dict[str, Any]) -> str:
+        """Build a factual summary from the profile response."""
+        metrics = parsed_profile.get("metrics", {})
+        query_type = metrics.get("query_type", "unknown")
+        shards = len(parsed_profile.get("shards", []))
+        return f"{query_type} profile across {shards} shard(s)"
 
     def get_slow_queries(self, threshold_ms: int = 100) -> list[dict[str, Any]]:
         """Get slow queries from Elasticsearch slow log.

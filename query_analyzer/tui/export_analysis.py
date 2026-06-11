@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from query_analyzer.adapters.models import QueryAnalysisReport
+from query_analyzer.adapters.models import PlanNode, QueryAnalysisReport
 
 
 class ExportFormat:
@@ -146,9 +146,7 @@ class AnalysisExporter:
         # AI recommendations as comments
         if self.report.ai_analysis and self.report.ai_analysis.recommendations:
             lines.append("-- AI Recommendations:")
-            for i, rec in enumerate(
-                self.report.ai_analysis.recommendations, 1
-            ):
+            for i, rec in enumerate(self.report.ai_analysis.recommendations, 1):
                 lines.append(f"-- {i}. {rec}")
             lines.append("")
 
@@ -234,7 +232,7 @@ class AnalysisExporter:
 
     @staticmethod
     def _format_plan_tree(
-        node,
+        node: PlanNode,
         depth: int = 0,
         is_last: bool = True,
         prefix: str = "",

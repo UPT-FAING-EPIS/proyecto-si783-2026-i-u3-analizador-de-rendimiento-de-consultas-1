@@ -37,13 +37,13 @@ def validate_query(query: str) -> None:
     - No obvious multi-statement injection patterns
 
     Supported query languages:
-    - SQL: SELECT, UPDATE, DELETE, INSERT, WITH
+    - SQL: SELECT, WITH, EXPLAIN
     - Flux: from(
-    - Cypher (Neo4j): MATCH, CREATE, MERGE, WITH, RETURN
-    - CQL (Cassandra): SELECT, INSERT, UPDATE, DELETE
+    - Cypher (Neo4j): MATCH, OPTIONAL MATCH, WITH, RETURN, CALL
+    - CQL (Cassandra): SELECT
     - MongoDB: db.collection or {query}
     - Elasticsearch: Query DSL starting with {
-    - Redis: Any non-empty string (commands validated by adapter)
+    - Redis: Read-only inspection commands
 
     Args:
         query: Query string to validate (supports multiple languages)
@@ -57,7 +57,8 @@ def validate_query(query: str) -> None:
         >>> validate_query("MATCH (u:User) RETURN u")  # OK (Cypher)
         >>> validate_query("")                      # Raises ValueError
     """
-    query = query.strip()
+    # Strip whitespace and UTF-8 BOM (PowerShell's echo adds \ufeff at start)
+    query = query.strip().lstrip("\ufeff")
 
     if not query:
         raise ValueError("Query cannot be empty")
@@ -67,48 +68,27 @@ def validate_query(query: str) -> None:
     # Check for valid query starters across all supported languages
     valid_starters = (
         # SQL variants (PostgreSQL, MySQL, SQLite, CockroachDB, YugabyteDB)
-        ("SELECT", "UPDATE", "DELETE", "INSERT", "WITH"),
+        ("SELECT", "WITH", "EXPLAIN"),
         # Flux (InfluxDB)
         ("from(",),
         # Cypher (Neo4j)
-        ("MATCH", "CREATE", "MERGE", "RETURN", "OPTIONAL"),
+        ("MATCH", "RETURN", "OPTIONAL", "CALL"),
         # Redis commands (all uppercase commands)
         (
             "PING",
             "GET",
-            "SET",
-            "HSET",
             "HGET",
-            "LPUSH",
-            "LPOP",
-            "RPUSH",
-            "RPOP",
-            "SADD",
             "SMEMBERS",
-            "ZADD",
             "ZRANGE",
-            "KEYS",
             "INFO",
-            "FLUSHDB",
-            "FLUSHALL",
-            "DELETE",
             "EXISTS",
             "TTL",
-            "EXPIRE",
-            "INCR",
-            "DECR",
-            "APPEND",
             "STRLEN",
             "LLEN",
             "LRANGE",
             "LINDEX",
-            "LSET",
-            "LREM",
-            "LTRIM",
             "SCARD",
             "SISMEMBER",
-            "SREM",
-            "SPOP",
             "SINTER",
             "SUNION",
             "SDIFF",
@@ -117,12 +97,9 @@ def validate_query(query: str) -> None:
             "ZRANK",
             "ZREVRANK",
             "ZCOUNT",
-            "ZINCRBY",
-            "ZREM",
             "SLOWLOG",
             "MEMORY",
             "DBSIZE",
-            "FLUSHDB",
             "SCAN",
             "HSCAN",
             "SSCAN",
@@ -130,71 +107,25 @@ def validate_query(query: str) -> None:
             "CONFIG",
             "COMMAND",
             "CLIENT",
-            "MONITOR",
-            "SHUTDOWN",
-            "SLAVEOF",
-            "REPLICAOF",
-            "SYNC",
-            "PSYNC",
-            "BGSAVE",
-            "SAVE",
             "LASTSAVE",
-            "BGREWRITEAOF",
-            "DUMP",
-            "RESTORE",
-            "MIGRATE",
             "OBJECT",
             "RANDOMKEY",
-            "RENAME",
-            "RENAMENX",
             "SORT",
             "TYPE",
             "BITCOUNT",
-            "BITFIELD",
-            "BITOP",
             "BITPOS",
             "GETBIT",
-            "SETBIT",
             "GETRANGE",
-            "SETRANGE",
-            "PFADD",
             "PFCOUNT",
-            "PFMERGE",
-            "GEOADD",
-            "GEORADIUS",
-            "GEORADIUSBYMEMBER",
             "GEOHASH",
             "GEOPOS",
             "GEODIST",
-            "TOUCH",
-            "UNLINK",
-            "WAIT",
-            "AUTH",
             "ECHO",
             "HELLO",
             "QUIT",
             "SELECT",
-            "SWAPDB",
             "PUBSUB",
-            "PSUBSCRIBE",
-            "PUBLISH",
-            "PUNSUBSCRIBE",
-            "SUBSCRIBE",
-            "UNSUBSCRIBE",
-            "SCRIPT",
-            "EVAL",
-            "EVALSHA",
             "GEOSEARCH",
-            "LMOVE",
-            "LMPOP",
-            "BLMOVE",
-            "BLPOP",
-            "BRPOP",
-            "BRPOPLPUSH",
-            "ZPOPMIN",
-            "ZPOPMAX",
-            "BZPOPMIN",
-            "BZPOPMAX",
             "ZMSCORE",
             "ZDIFF",
             "ZINTER",
@@ -203,11 +134,7 @@ def validate_query(query: str) -> None:
             "ZRANGEBYSCORE",
             "ZREVRANGEBYLEX",
             "ZREVRANGEBYSCORE",
-            "GETEX",
-            "GETDEL",
             "LCS",
-            "SMOVE",
-            "COPY",
         ),
         # CQL (Cassandra) - same as SQL variants
         # MongoDB - db.collection or { for query DSL
@@ -229,7 +156,8 @@ def validate_query(query: str) -> None:
 
     if not is_valid:
         raise ValueError(
-            f"Query must start with a valid query keyword (SQL, Cypher, Flux, etc.)\n"
+            "Only read-only queries can be analyzed.\n"
+            "The query must start with a supported read or inspection keyword.\n"
             f"Examples:\n"
             f"  SQL: SELECT * FROM users\n"
             f"  Cypher: MATCH (u:User) RETURN u\n"
@@ -634,16 +562,25 @@ def analyze(
                     from query_analyzer.core import AIAnalyzer
 
                     ai_analyzer = AIAnalyzer()
-                    if ai_analyzer.is_configured():
+                    if ai_analyzer.available:
                         if verbose:
                             err_console.print("[blue][INFO][/blue] Running AI analysis...")
                         ai_result = ai_analyzer.analyze(
+                            plan_json=report.raw_plan or report.plan_summary or "No plan available",
                             query=report.query,
-                            plan_summary=report.plan_summary or "No plan summary",
                             engine=report.engine,
                         )
                         if ai_result:
-                            report.ai_analysis = ai_result
+                            from query_analyzer.adapters.models import (
+                                AIAnalysisResult as ModelAIAnalysisResult,
+                            )
+
+                            report.ai_analysis = ModelAIAnalysisResult(
+                                summary=ai_result.summary,
+                                observations=ai_result.observations,
+                                recommendations=ai_result.recommendations,
+                                raw_response=ai_result.raw_response,
+                            )
                             if verbose:
                                 err_console.print("[green][INFO][/green] AI analysis complete")
                         else:

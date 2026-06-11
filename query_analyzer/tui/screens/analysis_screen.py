@@ -6,11 +6,13 @@ from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Grid, Horizontal, Vertical
+from textual.markup import escape as markup_escape
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Static, TabbedContent, TabPane
 
 from query_analyzer.adapters import QueryAnalysisError
 from query_analyzer.adapters.models import QueryAnalysisReport
+from query_analyzer.cli.commands.analyze import validate_query
 from query_analyzer.tui.connection_state import ConnectionManager
 from query_analyzer.tui.history_manager import AnalysisRecord, get_history_manager
 from query_analyzer.tui.screens.history_screen import HistoryScreen
@@ -35,24 +37,26 @@ class AnalysisScreen(Screen[None]):
     """
 
     BINDINGS = [
-        Binding("1", "select_tab_summary", "1:Res", priority=True),
-        Binding("2", "select_tab_metrics", "2:Met", priority=True),
-        Binding("3", "select_tab_plan", "3:Plan", priority=True),
-        Binding("4", "select_tab_ai", "4:IA", priority=True),
-        Binding("b", "focus_buttons", "b:Botones", priority=True),
-        Binding("a", "button_left", "a:Btn←", priority=True),
-        Binding("d", "button_right", "d:Btn→", priority=True),
-        Binding("w", "button_up", "w:Btn↑", priority=True),
-        Binding("s", "button_down", "s:Btn↓", priority=True),
-        Binding("left", "button_left", "←:Btn←"),
-        Binding("right", "button_right", "→:Btn→"),
-        Binding("up", "button_up", "↑:Btn↑"),
-        Binding("down", "button_down", "↓:Btn↓"),
-        Binding("h,ctrl+left", "previous_tab", "h/Ctrl+←:Ant", priority=True),
-        Binding("l,ctrl+right", "next_tab", "l/Ctrl+→:Sig", priority=True),
-        Binding("H", "show_history", "H:Hist", priority=True),
-        Binding("e", "export", "e:Export"),
-        Binding("escape", "go_back", "Esc:Atrás"),
+        Binding("1", "select_tab_summary", "Res", priority=True),
+        Binding("2", "select_tab_metrics", "Met", priority=True),
+        Binding("3", "select_tab_plan", "Plan", priority=True),
+        Binding("4", "select_tab_ai", "IA", priority=True),
+        Binding("b", "focus_buttons", "Botones", priority=True),
+        Binding("a", "button_left", "Btn←", priority=True),
+        Binding("d", "button_right", "Btn→", priority=True),
+        Binding("w", "button_up", "Btn↑", priority=True),
+        Binding("s", "button_down", "Btn↓", priority=True),
+        Binding("left", "button_left", "Btn←"),
+        Binding("right", "button_right", "Btn→"),
+        Binding("up", "button_up", "Btn↑"),
+        Binding("down", "button_down", "Btn↓"),
+        Binding("h,ctrl+left", "previous_tab", "Ctrl+←:Ant", priority=True),
+        Binding("l,ctrl+right", "next_tab", "Ctrl+→:Sig", priority=True),
+        Binding("H", "show_history", "Hist", priority=True),
+        Binding("c", "copy_query", "Copiar Q", priority=True),
+        Binding("e", "focus_editor", "Edic", priority=True),
+        Binding("x", "export", "Export", priority=True),
+        Binding("escape", "go_back", "Atrás"),
         Binding("q", "quit", show=False),
     ]
 
@@ -175,6 +179,7 @@ class AnalysisScreen(Screen[None]):
         self._profile_name = profile_name
         self._engine = self._get_engine_from_profile(profile_name)
         self._current_report: QueryAnalysisReport | None = None
+        self._current_ai_error: str | None = None
 
     @staticmethod
     def _get_engine_from_profile(profile_name: str) -> str:
@@ -196,15 +201,11 @@ class AnalysisScreen(Screen[None]):
         """Update context label with current profile and engine."""
         self._engine = self._get_engine_from_profile(self._profile_name)
         context = self.query_one("#context-label", Static)
-        context.update(
-            f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]"
-        )
+        context.update(f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]")
 
     def compose(self) -> ComposeResult:
         """Compose screen layout - v2.0.0 with tabs."""
-        context_text = (
-            f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]"
-        )
+        context_text = f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]"
         with Vertical(id="analysis-root"):
             yield Static(context_text, id="context-label")
 
@@ -340,6 +341,23 @@ class AnalysisScreen(Screen[None]):
         """Exit the application."""
         self.app.exit()
 
+    def action_copy_query(self) -> None:
+        """Copy current query to clipboard."""
+        query_editor = self.query_one(QueryEditor)
+        query_text = query_editor.query_text
+        if query_text.strip():
+            try:
+                self.app.copy_to_clipboard(query_text)
+                self.app.notify("Consulta copiada al portapapeles")
+            except Exception as e:
+                self.app.notify(f"No se pudo copiar: {e}", severity="error")
+        else:
+            self._set_status("[yellow]No hay consulta para copiar[/yellow]")
+
+    def action_focus_editor(self) -> None:
+        """Focus the query editor."""
+        self.query_one(QueryEditor).focus_editor()
+
     @on(Button.Pressed, "#btn-analyze")
     def on_analyze_pressed(self) -> None:
         """Handle analyze button press."""
@@ -375,9 +393,7 @@ class AnalysisScreen(Screen[None]):
             self._manager.last_profile_name == self._profile_name
             and self._manager.active_adapter is not None
         ):
-            current_adapter_engine = getattr(
-                self._manager.active_adapter, "_config", None
-            )
+            current_adapter_engine = getattr(self._manager.active_adapter, "_config", None)
             if current_adapter_engine:
                 current_engine = getattr(current_adapter_engine, "engine", None)
                 if current_engine == engine:
@@ -387,9 +403,7 @@ class AnalysisScreen(Screen[None]):
             self._manager.connect(self._profile_name)
             self._engine = self._manager.get_profile(self._profile_name).engine
             context = self.query_one("#context-label", Static)
-            context.update(
-                f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]"
-            )
+            context.update(f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]")
         except Exception as error:
             self._set_status(f"[red]Error de conexión: {error}[/red]")
 
@@ -402,6 +416,11 @@ class AnalysisScreen(Screen[None]):
         text = query.strip()
         if not text:
             self._set_status("[red]Error: query vacía[/red]")
+            return
+        try:
+            validate_query(text)
+        except ValueError as error:
+            self._set_status(f"[red]Error: {error}[/red]")
             return
 
         self.query_one(QueryEditor).set_busy(True)
@@ -427,20 +446,49 @@ class AnalysisScreen(Screen[None]):
                 raise QueryAnalysisError("No se pudo inicializar un adapter activo")
 
             report = adapter.execute_explain(query_text)
-            self.app.call_from_thread(self._on_analysis_success, query_text, report)
+
+            # AI Analysis integration
+            ai_error = None
+            try:
+                from query_analyzer.core.ai_analyzer import AIAnalyzer
+
+                ai_analyzer = AIAnalyzer()
+                if ai_analyzer.available:
+                    ai_result = ai_analyzer.analyze(
+                        plan_json=report.raw_plan or report.plan_summary or "No plan available",
+                        query=report.query,
+                        engine=report.engine,
+                    )
+                    if ai_result:
+                        from query_analyzer.adapters.models import (
+                            AIAnalysisResult as ModelAIAnalysisResult,
+                        )
+
+                        report.ai_analysis = ModelAIAnalysisResult(
+                            summary=ai_result.summary,
+                            observations=ai_result.observations,
+                            recommendations=ai_result.recommendations,
+                            raw_response=ai_result.raw_response,
+                        )
+            except Exception as e:
+                ai_error = str(e)
+
+            self.app.call_from_thread(self._on_analysis_success, query_text, report, ai_error)
         except Exception as error:
             self.app.call_from_thread(self._on_analysis_error, str(error))
 
     def _on_analysis_success(
-        self, query_text: str, report: QueryAnalysisReport
+        self, query_text: str, report: QueryAnalysisReport, ai_error: str | None = None
     ) -> None:
         """Handle successful analysis.
 
         Args:
             query_text: Original query text
             report: Analysis report
+            ai_error: Error message from AI analyzer if any
         """
         self._current_report = report
+        self._current_ai_error = ai_error
 
         # Save to history
         history_manager = get_history_manager()
@@ -450,14 +498,12 @@ class AnalysisScreen(Screen[None]):
             profile_name=self._profile_name,
         )
 
-        self._render_report(query_text, report)
+        self._render_report(query_text, report, ai_error)
 
         # Update status
         self.query_one(QueryEditor).set_busy(False)
         self.query_one("#btn-analyze", Button).disabled = False
-        self._set_status(
-            f"[green]✓ Análisis completado ({report.execution_time_ms:.2f}ms)[/green]"
-        )
+        self._set_status(f"[green]✓ Análisis completado ({report.execution_time_ms:.2f}ms)[/green]")
 
     def _on_analysis_error(self, error_message: str) -> None:
         """Handle analysis error.
@@ -467,7 +513,7 @@ class AnalysisScreen(Screen[None]):
         """
         self.query_one(QueryEditor).set_busy(False)
         self.query_one("#btn-analyze", Button).disabled = False
-        self._set_status(f"[red]✗ Error: {error_message}[/red]")
+        self._set_status(f"[red]✗ Error: {markup_escape(error_message)}[/red]")
         self._clear_results()
 
     def _set_status(self, message: str) -> None:
@@ -493,6 +539,7 @@ class AnalysisScreen(Screen[None]):
         self.query_one(PlanTreeWidget).clear()
         self.query_one(AIInsightsPanel).clear()
         self._current_report = None
+        self._current_ai_error = None
 
     def _on_export_complete(self, result: str | None) -> None:
         """Handle export dialog completion.
@@ -501,9 +548,7 @@ class AnalysisScreen(Screen[None]):
             result: Export path if successful, None if cancelled
         """
         if result:
-            self._set_status(
-                f"[green]✓ Exported to {result}[/green]"
-            )
+            self._set_status(f"[green]✓ Exported to {result}[/green]")
         else:
             self._set_status("[yellow]Export cancelled[/yellow]")
 
@@ -513,24 +558,31 @@ class AnalysisScreen(Screen[None]):
             return
 
         self._current_report = record.report
+        self._current_ai_error = None
         editor = self.query_one(QueryEditor)
         editor.set_query_text(record.query)
-        self._render_report(record.query, record.report)
+        self._render_report(record.query, record.report, None)
         self._set_status("[green]✓ Análisis cargado desde historial[/green]")
 
-    def _render_report(self, query_text: str, report: QueryAnalysisReport) -> None:
+    def _render_report(
+        self, query_text: str, report: QueryAnalysisReport, ai_error: str | None = None
+    ) -> None:
         """Render report widgets for analysis or history loads."""
         summary_widget = self.query_one(QuerySummary)
-        summary_widget.render_summary(query_text, report.engine)
+        summary_widget.render_summary(query_text, report, self._profile_name)
 
         metrics_widget = self.query_one(MetricsPanel)
-        metrics_widget.render_metrics(report.execution_time_ms, report.plan_tree)
+        metrics_widget.render_metrics(
+            report.execution_time_ms,
+            report.plan_tree,
+            report.metrics,
+        )
 
         plan_widget = self.query_one(PlanTreeWidget)
-        plan_widget.render_plan(report.plan_tree)
+        plan_widget.render_plan(report.plan_tree, report.raw_plan)
 
         ai_widget = self.query_one(AIInsightsPanel)
-        ai_widget.render_ai_analysis(report.ai_analysis)
+        ai_widget.render_ai_analysis(report.ai_analysis, ai_error)
 
     def _get_tabbed_content(self) -> TabbedContent:
         """Get the right-side tabbed content widget."""

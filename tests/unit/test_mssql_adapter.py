@@ -220,7 +220,8 @@ class TestMSSQLAdapterExplain:
 
             assert isinstance(report, QueryAnalysisReport)
             assert report.engine == "mssql"
-            assert 0 <= report.score <= 100
+            assert report.execution_time_ms > 0
+            assert report.plan_tree is not None
             assert "xml" in report.raw_plan
 
             # Verify SHOWPLAN_XML was properly toggled

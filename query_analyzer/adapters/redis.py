@@ -1,19 +1,14 @@
 """Redis database adapter using redis-py."""
 
 import logging
-from typing import Any, Literal, cast
+from typing import Any
 
 import redis
 
 from query_analyzer.adapters.base import BaseAdapter
 from query_analyzer.adapters.exceptions import ConnectionError as AdapterConnectionError
 from query_analyzer.adapters.exceptions import QueryAnalysisError
-from query_analyzer.adapters.models import (
-    ConnectionConfig,
-    QueryAnalysisReport,
-    Recommendation,
-    Warning,
-)
+from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport
 from query_analyzer.adapters.registry import AdapterRegistry
 
 from .redis_parser import RedisParser
@@ -26,7 +21,7 @@ class RedisAdapter(BaseAdapter):
     """Redis adapter using redis-py driver.
 
     Implements BaseAdapter methods for Redis, including SLOWLOG analysis,
-    dangerous command detection, and metrics collection. Redis doesn't have
+    command complexity, blocking behavior, and metrics collection. Redis doesn't have
     a native query plan like SQL databases, so analysis focuses on:
 
     1. SLOWLOG entries (commands that exceeded execution threshold)
@@ -184,10 +179,8 @@ class RedisAdapter(BaseAdapter):
     def execute_explain(self, query: str) -> QueryAnalysisReport:
         """Analyze Redis command via pattern detection (fail-fast).
 
-        Since Redis has no native EXPLAIN, analysis consists of:
-        1. Command pattern matching (detect O(N) operations)
-        2. Plan normalization for documentation
-        3. Scoring based on dangerous command detection
+        Redis has no native EXPLAIN. The adapter normalizes command metadata
+        and exposes the command complexity reported by the parser.
 
         Args:
             query: Redis command string to analyze (e.g., "KEYS *")
@@ -207,120 +200,16 @@ class RedisAdapter(BaseAdapter):
             if not command:
                 raise QueryAnalysisError("Empty command provided")
 
-            # Detect dangerous patterns
-            is_dangerous, reason, penalty = self.parser.detect_dangerous_command(query)
-
             # Normalize to standardized plan
             normalized_plan = self.parser.normalize_plan(query)
-
-            # Generate warnings and recommendations based on dangerous detection
-            warnings: list[Warning] = []
-            recommendations: list[Recommendation] = []
-
-            if is_dangerous:
-                # Convert string reason to Warning object with proper severity
-                severity_str = "critical" if penalty <= -50 else "high"
-                severity: Literal["critical", "high", "medium", "low"] = cast(
-                    Literal["critical", "high", "medium", "low"], severity_str
-                )
-                warnings.append(
-                    Warning(
-                        severity=severity,
-                        message=reason,
-                        node_type="Command",
-                        affected_object=command,
-                    )
-                )
-
-                # Add complexity-specific recommendations
-                priority = 1 if penalty <= -50 else 3
-                if "KEYS" in command:
-                    recommendations.append(
-                        Recommendation(
-                            priority=priority,
-                            title="Use SCAN instead of KEYS",
-                            description="KEYS * scans the entire keyspace and blocks Redis. "
-                            "Use SCAN with cursor for pagination to avoid blocking.",
-                            code_snippet="SCAN cursor MATCH pattern",
-                            affected_object=command,
-                        )
-                    )
-                elif "SMEMBERS" in command:
-                    recommendations.append(
-                        Recommendation(
-                            priority=priority,
-                            title="Use SSCAN for large sets",
-                            description="SMEMBERS blocks Redis. Use SSCAN for large sets.",
-                            code_snippet="SSCAN key cursor",
-                            affected_object=command,
-                        )
-                    )
-                elif "HGETALL" in command:
-                    recommendations.append(
-                        Recommendation(
-                            priority=priority,
-                            title="Use HSCAN for large hashes",
-                            description="HGETALL blocks Redis. Use HSCAN or retrieve specific fields only.",
-                            code_snippet="HSCAN key cursor",
-                            affected_object=command,
-                        )
-                    )
-                elif "LRANGE" in command and "0" in query and "-1" in query:
-                    recommendations.append(
-                        Recommendation(
-                            priority=priority,
-                            title="Add offset/limit to LRANGE",
-                            description="LRANGE 0 -1 blocks Redis. Add offset/limit parameters.",
-                            code_snippet="LRANGE key start stop",
-                            affected_object=command,
-                        )
-                    )
-                elif "SORT" in command:
-                    recommendations.append(
-                        Recommendation(
-                            priority=priority,
-                            title="Add LIMIT to SORT or pre-sort",
-                            description="SORT blocks Redis. Consider pre-sorting or using SORT with LIMIT.",
-                            code_snippet="SORT key LIMIT 0 100",
-                            affected_object=command,
-                        )
-                    )
-                elif "SINTER" in command or "SUNION" in command:
-                    recommendations.append(
-                        Recommendation(
-                            priority=priority,
-                            title="Pre-compute and cache intersections",
-                            description="Set operations block Redis. Pre-compute and cache results.",
-                            code_snippet="SINTERSTORE dest key1 key2",
-                            affected_object=command,
-                        )
-                    )
-                elif "FLUSHDB" in command or "FLUSHALL" in command:
-                    recommendations.append(
-                        Recommendation(
-                            priority=1,  # Critical
-                            title="Use selective DEL in production",
-                            description="FLUSHDB/FLUSHALL deletes all data. Use selective DEL in production.",
-                            code_snippet="DEL key1 key2 key3",
-                            affected_object=command,
-                        )
-                    )
-
-            # Calculate score: 100 is perfect, penalties for dangerous commands
-            base_score = 100.0
-            score = int(max(0.0, base_score + penalty))
 
             return QueryAnalysisReport(
                 engine="redis",
                 query=query,
-                score=score,
                 execution_time_ms=1.0,  # Default to 1.0ms (unknown without real execution)
-                warnings=warnings,
-                recommendations=recommendations,
+                plan_summary=f"Redis command: {command}",
                 raw_plan=normalized_plan,
                 metrics={
-                    "is_dangerous_command": is_dangerous,
-                    "danger_reason": reason if is_dangerous else None,
                     "command": command,
                     "normalized_plan": normalized_plan,
                     "complexity": normalized_plan.get("complexity", "Unknown"),

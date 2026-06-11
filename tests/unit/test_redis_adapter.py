@@ -59,98 +59,6 @@ class TestRedisParserParsing:
         assert result["args"] == []
 
 
-class TestRedisParserDangerousCommands:
-    """Test detection of dangerous O(N) commands."""
-
-    def test_detect_keys_command(self):
-        """Test KEYS command detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("KEYS *")
-
-        assert is_dangerous is True
-        assert "bloqueante" in reason.lower()
-        assert penalty == -25
-
-    def test_detect_smembers_command(self):
-        """Test SMEMBERS command detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("SMEMBERS myset")
-
-        assert is_dangerous is True
-        assert "paginación" in reason.lower()
-        assert penalty == -25
-
-    def test_detect_hgetall_command(self):
-        """Test HGETALL command detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("HGETALL myhash")
-
-        assert is_dangerous is True
-        assert "paginación" in reason.lower()
-        assert penalty == -20
-
-    def test_detect_lrange_full(self):
-        """Test LRANGE 0 -1 (full list) detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("LRANGE mylist 0 -1")
-
-        assert is_dangerous is True
-        assert "O(N)" in reason
-        assert penalty == -20
-
-    def test_detect_sort_command(self):
-        """Test SORT command detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("SORT mykey")
-
-        assert is_dangerous is True
-        assert "O(N + M log M)" in reason
-        assert penalty == -25
-
-    def test_detect_sinter_command(self):
-        """Test SINTER (set intersection) detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command(
-            "SINTER set1 set2 set3"
-        )
-
-        assert is_dangerous is True
-        assert "O(N+M)" in reason
-        assert penalty == -15
-
-    def test_detect_sunion_command(self):
-        """Test SUNION (set union) detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("SUNION set1 set2")
-
-        assert is_dangerous is True
-        assert "O(N+M)" in reason
-        assert penalty == -15
-
-    def test_detect_flushdb_command(self):
-        """Test FLUSHDB command detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("FLUSHDB")
-
-        assert is_dangerous is True
-        assert "destructiva" in reason.lower()
-        assert penalty == -30
-
-    def test_detect_flushall_command(self):
-        """Test FLUSHALL command detection."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("FLUSHALL")
-
-        assert is_dangerous is True
-        assert "destructiva" in reason.lower()
-        assert penalty == -30
-
-    def test_detect_safe_command(self):
-        """Test safe command returns no danger."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("GET mykey")
-
-        assert is_dangerous is False
-        assert reason == ""
-        assert penalty == 0
-
-    def test_detect_set_command(self):
-        """Test SET command is safe."""
-        is_dangerous, reason, penalty = RedisParser.detect_dangerous_command("SET mykey myvalue")
-
-        assert is_dangerous is False
-
-
 class TestRedisParserNormalization:
     """Test command normalization to standardized format."""
 
@@ -164,7 +72,7 @@ class TestRedisParserNormalization:
         assert result["is_blocking"] is True
         assert result["data_structure"] == "KEYS"
         assert len(result["extra_info"]) > 0
-        assert any("SCAN" in info for info in result["extra_info"])
+        assert any("Blocks Redis thread" in info for info in result["extra_info"])
 
     def test_normalize_smembers_command(self):
         """Test normalization of SMEMBERS command."""
@@ -306,28 +214,28 @@ class TestRedisAdapterExecuteExplain:
         assert isinstance(report, QueryAnalysisReport)
         assert report.engine == "redis"
         assert report.query == "KEYS *"
-        assert 0 <= report.score <= 100
+        assert report.plan_summary == "Redis command: KEYS"
+        assert report.metrics["complexity"] == "O(N)"
 
-    def test_execute_explain_keys_command_score(self, adapter, mocker):
-        """Test KEYS command receives low score (dangerous)."""
+    def test_execute_explain_keys_command_metadata(self, adapter, mocker):
+        """Test KEYS command exposes normalized complexity metadata."""
         mocker.patch.object(adapter, "_is_connected", True)
         mocker.patch.object(adapter, "_client", {})
 
         report = adapter.execute_explain("KEYS *")
 
-        # KEYS * is O(N) bloqueante, should have low score
-        assert report.score < 100
+        assert report.metrics["command"] == "KEYS"
+        assert report.raw_plan["complexity"] == "O(N)"
 
-    def test_execute_explain_safe_command_score(self, adapter, mocker):
-        """Test safe command receives higher score."""
+    def test_execute_explain_get_command_metadata(self, adapter, mocker):
+        """Test GET command exposes normalized metadata."""
         mocker.patch.object(adapter, "_is_connected", True)
         mocker.patch.object(adapter, "_client", {})
 
         report = adapter.execute_explain("GET mykey")
 
-        # GET is safe, should have acceptable score
-        # (Score depends on AntiPatternDetector)
-        assert report.score >= 0
+        assert report.metrics["command"] == "GET"
+        assert report.plan_summary == "Redis command: GET"
 
     def test_execute_explain_not_connected(self, adapter):
         """Test execute_explain raises error when not connected."""
@@ -348,8 +256,9 @@ class TestRedisAdapterExecuteExplain:
 
         report = adapter.execute_explain("KEYS *")
 
-        assert "is_dangerous_command" in report.metrics
         assert "command" in report.metrics
+        assert "normalized_plan" in report.metrics
+        assert "complexity" in report.metrics
 
 
 class TestRedisAdapterParserIntegration:
@@ -359,9 +268,8 @@ class TestRedisAdapterParserIntegration:
         """Test adapter correctly uses RedisParser."""
         assert adapter.parser is not None
 
-        # Verify parser methods exist
+        # Verify factual parser methods exist
         assert hasattr(adapter.parser, "parse_command")
-        assert hasattr(adapter.parser, "detect_dangerous_command")
         assert hasattr(adapter.parser, "normalize_plan")
 
 

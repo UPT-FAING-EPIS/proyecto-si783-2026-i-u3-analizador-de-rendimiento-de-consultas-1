@@ -237,7 +237,7 @@ class MySQLAdapter(BaseAdapter):
 
         # MySQL EXPLAIN JSON structure is query_block > select_list > table references
         select_type = query_block.get("select_type", "").lower()
-        
+
         # Try to get table info
         table_info = query_block.get("table", {})
         if isinstance(table_info, dict):

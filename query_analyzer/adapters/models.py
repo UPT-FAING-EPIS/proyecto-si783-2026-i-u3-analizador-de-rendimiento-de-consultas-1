@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
@@ -281,148 +281,6 @@ class PlanNode(BaseModel):
         return v.strip()
 
 
-class Warning(BaseModel):
-    """Advertencia estructurada - reemplaza strings planos.
-
-    Permite que la TUI tome decisiones visuales basadas en severidad
-    sin necesidad de parsear el mensaje.
-    """
-
-    severity: Literal["critical", "high", "medium", "low"]
-    """
-    critical: Error que afecta severamente performance (~score < 40)
-    high: Problema significativo (~score 40-60)
-    medium: Problema moderado (~score 60-80)
-    low: Informativo, mejora recomendada (~score > 80)
-    """
-
-    message: str
-    """Descripción clara del problema (ej: 'Full table scan on users')
-
-    Debe ser:
-    - Conciso (máx 200 caracteres)
-    - Accionable (indicar qué está mal)
-    - Específico (incluir nombres reales)
-    """
-
-    node_type: str | None = None
-    """Tipo de nodo afectado (ej: 'Seq Scan', 'COLLSCAN', 'Sort')
-
-    Permite a la TUI colorear el árbol de ejecución.
-    """
-
-    affected_object: str | None = None
-    """Tabla, colección, índice, campo, etc.
-
-    Ejemplos:
-    - PostgreSQL: 'users', 'orders_idx', 'age'
-    - MongoDB: 'users', 'email_index'
-    - Neo4j: 'User', 'MATCHES_WITH'
-    """
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    """Información adicional específica del detector:
-
-    Ejemplos:
-    - {'rows': 50000, 'threshold': 10000}
-    - {'actual': 10000, 'estimated': 100, 'divergence': 0.99}
-    - {'has_filesort': True, 'function': 'LOWER'}
-    """
-
-    model_config = ConfigDict(validate_assignment=True)
-
-    @field_validator("message")
-    @classmethod
-    def validate_message(cls, v: str) -> str:
-        """Valida que el mensaje no esté vacío."""
-        if not v or not v.strip():
-            raise ValueError("message no puede estar vacío")
-        return v.strip()
-
-
-class Recommendation(BaseModel):
-    """Recomendación priorizada y estructurada.
-
-    Reemplaza strings genéricos con información accionable,
-    código ejecutable, y prioridad automática.
-    """
-
-    priority: int
-    """Prioridad: 1-10 (1=crítico/urgente, 10=futuro/nice-to-have)
-
-    Calculado por cada adapter según:
-    - Severidad del problema (critical → 1-2)
-    - Impacto en performance (high → 3-4)
-    - Complejidad de implementación
-
-    La TUI simplemente ordena de menor a mayor sin entender criterios.
-    """
-
-    title: str
-    """Título accionable (máx 100 caracteres)
-
-    Ejemplos:
-    - "Add index on users(email)"
-    - "Rewrite query without LOWER() function"
-    - "Add time filter to InfluxDB query"
-    - "Use MERGE with MATCH instead of MATCH + CREATE"
-    """
-
-    description: str
-    """Explicación detallada (máx 500 caracteres)
-
-    Debe incluir:
-    - POR QUÉ es necesario
-    - CÓMO solucionar
-    - BENEFICIOS esperados
-    """
-
-    code_snippet: str | None = None
-    """Código SQL/Flux/Cypher listo para copiar y ejecutar
-
-    Ejemplos:
-    - PostgreSQL: "CREATE INDEX idx_users_email ON users(email);"
-    - MongoDB: "db.users.createIndex({'email': 1});"
-    - Flux: "range(start: -24h, stop: now())"
-    - Neo4j: "CREATE INDEX FOR (u:User) ON (u.email)"
-
-    Si None, no hay snippet disponible.
-    """
-
-    affected_object: str | None = None
-    """Tabla/colección/índice/campo que se recomienda cambiar
-
-    Permite a CLI/TUI enlazar la recomendación con el object específico.
-    """
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    """Información específica del motor
-
-    Ejemplos:
-    - {'type': 'index', 'columns': ['email']}
-    - {'alternative_query': '...'}
-    - {'execution_time_reduction': '45%'}
-    """
-
-    model_config = ConfigDict(validate_assignment=True)
-
-    @field_validator("priority")
-    @classmethod
-    def validate_priority(cls, v: int) -> int:
-        """Valida que priority esté entre 1-10."""
-        if not 1 <= v <= 10:
-            raise ValueError("priority debe estar entre 1 y 10")
-        return v
-
-    @field_validator("title")
-    @classmethod
-    def validate_title(cls, v: str) -> str:
-        """Valida que title no esté vacío."""
-        if not v or not v.strip():
-            raise ValueError("title no puede estar vacío")
-        return v.strip()
-
-
 class AIAnalysisResult(BaseModel):
     """Resultado del análisis con IA - v2.0.0.
 
@@ -462,12 +320,9 @@ class AIAnalysisResult(BaseModel):
 class QueryAnalysisReport(BaseModel):
     """Reporte de análisis de consulta - Modelo v2.0.0.
 
-    CAMBIO IMPORTANTE: Enfoque en datos REALES del EXPLAIN.
-    - ❌ ELIMINADO: score (0-100 subjetivo)
-    - ❌ ELIMINADO: warnings (generadas por anti-patrones)
-    - ❌ ELIMINADO: recommendations (v1, estáticas)
-    - ✅ NUEVO: plan_summary (resumen simple del plan)
-    - ✅ NUEVO: ai_analysis (insights opcionales con IA)
+    Enfoque en datos reales del EXPLAIN o equivalente del motor.
+    La interpretación en lenguaje natural vive únicamente en ``ai_analysis``
+    y nunca se mezcla con las métricas observadas.
 
     Attributes:
         engine: Motor de base de datos que ejecutó el análisis

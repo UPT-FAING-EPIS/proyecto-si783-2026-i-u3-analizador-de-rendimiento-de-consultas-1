@@ -4,7 +4,9 @@ Textual-based terminal interface for connection profile management.
 """
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Thread
+from typing import TYPE_CHECKING
 
 from textual.app import App, ComposeResult
 from textual.containers import Container
@@ -15,6 +17,9 @@ from query_analyzer.tui.connection_state import ConnectionManager, ConnectionSta
 from query_analyzer.tui.screens.analysis_screen import AnalysisScreen
 from query_analyzer.tui.widgets.connection_form import ConnectionForm
 from query_analyzer.tui.widgets.profile_selector import ProfileAction, ProfileSelector
+
+if TYPE_CHECKING:
+    from query_analyzer.core.connection_diagnostics import ConnectionDiagnostic
 
 
 class StatusBar(Static):
@@ -34,18 +39,21 @@ class StatusBar(Static):
         self._manager = ConnectionManager.get()
 
     def update_status(self) -> None:
-        status = self._manager.status
+        counts = self._manager.status_counts()
+        connected = counts[ConnectionStatus.CONNECTED]
+        connecting = counts[ConnectionStatus.CONNECTING]
+        errors = counts[ConnectionStatus.ERROR]
+        disconnected = counts[ConnectionStatus.DISCONNECTED]
 
-        if status == ConnectionStatus.CONNECTED:
-            msg = f"✓ Conectado ({self._manager.last_profile_name})"
-        elif status == ConnectionStatus.CONNECTING:
-            msg = "Conectando..."
-        elif status == ConnectionStatus.ERROR:
-            msg = f"✗ Error: {self._manager.error_message or 'Desconocido'}"
-        else:
-            msg = "Sin conectar"
+        parts = [f"[green]{connected} conectados[/green]"]
+        if connecting:
+            parts.append(f"[yellow]{connecting} probando[/yellow]")
+        if errors:
+            parts.append(f"[red]{errors} con error[/red]")
+        if disconnected:
+            parts.append(f"{disconnected} sin probar")
 
-        self.update(msg)
+        self.update(" | ".join(parts))
 
 
 class DeleteConfirm(ModalScreen[bool]):
@@ -123,6 +131,8 @@ class ConnectionScreen(Container):
             )
         elif action == "delete" and profile_name:
             self._delete_profile(profile_name)
+        elif action == "diagnose" and profile_name:
+            self._run_diagnostics_and_show(profile_name)
         elif action == "analyze" and profile_name:
             profile_status = self._manager.status_for_profile(profile_name)
             status_bar = self.query_one("#status-bar", StatusBar)
@@ -163,17 +173,73 @@ class ConnectionScreen(Container):
 
         self.app.push_screen(DeleteConfirm(name, on_confirm))
 
+    def _run_diagnostics_and_show(self, name: str) -> None:
+        if self._manager.status_for_profile(name) == ConnectionStatus.CONNECTING:
+            return
+
+        self._manager.mark_connecting(name)
+        self._refresh_ui_status()
+
+        status_bar = self.query_one("#status-bar", StatusBar)
+        status_bar.update(f"[yellow]Ejecutando diagnóstico para '{name}'...[/yellow]")
+
+        def run() -> None:
+            try:
+                config_mgr = self._manager.config_manager
+                connection_config = config_mgr.get_connection_config(name)
+                from query_analyzer.core.connection_diagnostics import ConnectionDiagnosticsService
+
+                diagnostic = ConnectionDiagnosticsService.run_diagnostics(name, connection_config)
+
+                self._manager.set_diagnostic(name, diagnostic)
+
+                if diagnostic.status == "connected":
+                    self._manager.set_profile_status(name, ConnectionStatus.CONNECTED)
+                else:
+                    self._manager.set_profile_status(
+                        name, ConnectionStatus.ERROR, diagnostic.safe_message
+                    )
+
+                self.app.call_from_thread(self._show_diagnostic_modal, diagnostic)
+            except Exception as e:
+                self.app.call_from_thread(
+                    status_bar.update, f"[red]Error al diagnosticar: {e}[/red]"
+                )
+                self._manager.set_profile_status(name, ConnectionStatus.ERROR, str(e))
+            finally:
+                self.app.call_from_thread(self._refresh_ui_status)
+
+        Thread(target=run, daemon=True).start()
+
+    def _show_diagnostic_modal(self, diagnostic: ConnectionDiagnostic) -> None:
+        from query_analyzer.tui.widgets.diagnostic_modal import DiagnosticModal
+
+        self.app.push_screen(DiagnosticModal(diagnostic))
+
     def _start_initial_probe(self) -> None:
         probe_thread = Thread(target=self._probe_all_profiles_background, daemon=True)
         probe_thread.start()
 
     def _probe_all_profiles_background(self) -> None:
-        profiles = self._manager.list_profiles()
-        for name in profiles:
+        profile_names = list(self._manager.list_profiles())
+        if not profile_names:
+            return
+
+        for name in profile_names:
             self._manager.mark_connecting(name)
-            self.app.call_from_thread(self._refresh_ui_status)
-            self._manager.probe_profile(name)
-            self.app.call_from_thread(self._refresh_ui_status)
+        self.app.call_from_thread(self._refresh_ui_status)
+
+        worker_count = min(8, len(profile_names))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(self._manager.probe_profile, name): name for name in profile_names
+            }
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    pass
+                self.app.call_from_thread(self._refresh_ui_status)
 
     def _refresh_ui_status(self) -> None:
         selector = self.query_one(ProfileSelector)
@@ -218,6 +284,7 @@ class QueryAnalyzerApp(App):
     BINDINGS = [
         ("q", "quit", "Salir"),
         ("c", "app.pop_screen", "Cancelar"),
+        ("d", "diagnose_selected", "Diagnóstico"),
     ]
 
     def __init__(self) -> None:
@@ -231,6 +298,17 @@ class QueryAnalyzerApp(App):
 
     def on_mount(self) -> None:
         pass
+
+    def action_diagnose_selected(self) -> None:
+        """Acción de teclado para diagnosticar el perfil seleccionado."""
+        try:
+            connection_screen = self.query_one(ConnectionScreen)
+            selector = connection_screen.query_one(ProfileSelector)
+            selected = selector.selected_profile
+            if selected:
+                connection_screen.post_message(ProfileAction("diagnose", selected))
+        except Exception:
+            pass
 
 
 def run() -> None:

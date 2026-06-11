@@ -5,6 +5,7 @@ from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from query_analyzer.adapters import (
+    AdapterRegistry,
     BaseAdapter,
 )
 from query_analyzer.cli.utils import OutputFormatter
@@ -34,15 +35,11 @@ def _get_adapter(engine: str) -> type[BaseAdapter]:
     Raises:
         ValueError: Si el engine no está soportado o no registrado en el registry.
 
-    Note:
-        Actualmente es un stub. La implementación real cargará dinámicamente
-        desde el AdapterRegistry en producción.
     """
-    # TODO: Implementar factory de adapters cuando existan
-    # Por ahora retornamos None para indicar que no está implementado
-    if engine.lower() not in ("postgresql", "mysql", "mssql"):
+    engine_key = engine.lower()
+    if not AdapterRegistry.is_registered(engine_key):
         raise ValueError(f"Engine {engine} no soportado")
-    return None  # type: ignore
+    return AdapterRegistry._registry[engine_key]
 
 
 @app.command()
@@ -229,24 +226,43 @@ def test(
         config_mgr = ConfigManager()
         profile = config_mgr.get_profile(name)
 
-        # Convertir a ConnectionConfig
-        config_mgr.get_connection_config(name)
+        connection_config = config_mgr.get_connection_config(name)
 
         console.print(f"Testing connection to '[bold]{name}[/bold]'...")
 
-        # TODO: Una vez que tengamos los adapters implementados:
-        # 1. Crear instancia del adapter
-        # 2. Llamar test_connection()
-        # 3. Ejecutar query diagnóstica
+        from query_analyzer.core.connection_diagnostics import ConnectionDiagnosticsService
 
-        OutputFormatter.print_warning("Adapters aún no implementados, saltando prueba de conexión")
-        OutputFormatter.print_info(
-            f"Profile {name}: {profile.engine}@{profile.host}:{profile.port}"
-        )
+        diagnostic = ConnectionDiagnosticsService.run_diagnostics(name, connection_config)
+
+        for check in diagnostic.checks:
+            if check.status == "success":
+                status_char = "[green]✓[/green]"
+            elif check.status == "failed":
+                status_char = "[red]✗[/red]"
+            else:
+                status_char = "[yellow]-[/yellow]"
+
+            duration_text = f" ({check.duration_ms:.1f}ms)" if check.status != "skipped" else ""
+            console.print(f"  {status_char} {check.name}: {check.message}{duration_text}")
+
+        console.print(f"  Fecha de diagnóstico: {diagnostic.checked_at.isoformat()}")
+        console.print(f"  Duración total: {diagnostic.duration_ms:.1f}ms")
+
+        if diagnostic.status == "connected":
+            OutputFormatter.print_success(
+                f"Connection successful: {profile.engine}@{diagnostic.endpoint}"
+            )
+        else:
+            OutputFormatter.print_error(f"Error ({diagnostic.status}): {diagnostic.safe_message}")
+            if diagnostic.technical_detail:
+                console.print(f"  [dim]Technical detail: {diagnostic.technical_detail}[/dim]")
+            raise typer.Exit(code=1)
 
     except ProfileNotFoundError:
         OutputFormatter.print_error(f"Perfil '{name}' no encontrado")
         raise typer.Exit(code=1) from None
+    except typer.Exit:
+        raise
     except Exception as e:
         OutputFormatter.print_error(f"Error: {e}")
         raise typer.Exit(code=1) from None

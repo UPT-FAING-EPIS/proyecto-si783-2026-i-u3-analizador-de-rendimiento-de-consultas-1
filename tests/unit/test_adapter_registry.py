@@ -35,7 +35,6 @@ class MockPostgreSQLAdapter(BaseAdapter):
         return QueryAnalysisReport(
             engine="postgresql",
             query=query,
-            score=80,
             execution_time_ms=100.0,
         )
 
@@ -67,7 +66,6 @@ class MockMySQLAdapter(BaseAdapter):
         return QueryAnalysisReport(
             engine="mysql",
             query=query,
-            score=75,
             execution_time_ms=150.0,
         )
 
@@ -136,7 +134,7 @@ class TestAdapterRegistryRegister:
                 return False
 
             def execute_explain(self, query: str) -> QueryAnalysisReport:
-                return QueryAnalysisReport(engine="postgresql", query=query, score=0)
+                return QueryAnalysisReport(engine="postgresql", query=query)
 
             def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
                 return []
@@ -182,7 +180,7 @@ class TestAdapterRegistryRegister:
                 return False
 
             def execute_explain(self, query: str) -> QueryAnalysisReport:
-                return QueryAnalysisReport(engine="test", query=query, score=0)
+                return QueryAnalysisReport(engine="test", query=query)
 
             def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
                 return []
@@ -393,7 +391,7 @@ class TestAdapterRegistryIntegration:
                 return False
 
             def execute_explain(self, query: str) -> QueryAnalysisReport:
-                return QueryAnalysisReport(engine="postgresql", query=query, score=0)
+                return QueryAnalysisReport(engine="postgresql", query=query)
 
             def get_slow_queries(self, threshold_ms: int = 1000) -> list[dict[str, Any]]:
                 return []

@@ -9,7 +9,7 @@ class MSSQLExplainParser:
 
     Analiza el XML devuelto por SET SHOWPLAN_XML ON para extraer métricas,
     construir el árbol de ejecución y generar un plan normalizado compatible
-    con AntiPatternDetector.
+    en una estructura comun para la interfaz.
     """
 
     _SHOWPLAN_NS = "http://schemas.microsoft.com/sqlserver/2004/07/showplan"
@@ -150,7 +150,7 @@ class MSSQLExplainParser:
         return most_expensive
 
     def normalize_plan(self, raw_plan: dict[str, Any] | str) -> dict[str, Any]:
-        """Convert SQL Server XML plan to normalized format for AntiPatternDetector.
+        """Convert SQL Server XML plan to the normalized shared format.
 
         Args:
             raw_plan: Either a dict node from parse() or raw XML string

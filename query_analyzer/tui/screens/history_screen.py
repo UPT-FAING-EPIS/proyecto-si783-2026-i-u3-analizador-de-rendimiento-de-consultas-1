@@ -29,16 +29,16 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     """
 
     BINDINGS = [
-        Binding("1", "select_tab_summary", "1:Res", priority=True),
-        Binding("2", "select_tab_metrics", "2:Met", priority=True),
-        Binding("3", "select_tab_plan", "3:Plan", priority=True),
-        Binding("4", "select_tab_ai", "4:IA", priority=True),
-        Binding("ctrl+right", "next_tab", "Ctrl+→:Sig", priority=True),
-        Binding("ctrl+left", "previous_tab", "Ctrl+←:Ant", priority=True),
-        Binding("/", "focus_search", "/:Buscar", priority=True),
-        Binding("l", "focus_list", "l:Lista", priority=True),
-        Binding("b", "focus_buttons", "b:Botones", priority=True),
-        Binding("t", "focus_tabs", "t:Pestañas", priority=True),
+        Binding("1", "select_tab_summary", "Res", priority=True),
+        Binding("2", "select_tab_metrics", "Met", priority=True),
+        Binding("3", "select_tab_plan", "Plan", priority=True),
+        Binding("4", "select_tab_ai", "IA", priority=True),
+        Binding("ctrl+right", "next_tab", "Sig", priority=True),
+        Binding("ctrl+left", "previous_tab", "Ant", priority=True),
+        Binding("/", "focus_search", "Buscar", priority=True),
+        Binding("l", "focus_list", "Lista", priority=True),
+        Binding("b", "focus_buttons", "Botones", priority=True),
+        Binding("t", "focus_tabs", "Pestañas", priority=True),
         ("escape", "go_back", "Volver"),
         ("j", "select_next", "Siguiente"),
         ("k", "select_previous", "Anterior"),
@@ -315,9 +315,9 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
             # Search in both query text and profile names
             search_lower = search_text.lower()
             self._filtered_records = [
-                r for r in self._history.get_all_for_profile(self._profile_name)
-                if search_lower in r.query.lower()
-                or search_lower in r.profile_name.lower()
+                r
+                for r in self._history.get_all_for_profile(self._profile_name)
+                if search_lower in r.query.lower() or search_lower in r.profile_name.lower()
             ]
 
         self._selected_index = 0
@@ -335,18 +335,14 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
     def action_select_next(self) -> None:
         """Select next item in list."""
         if self._filtered_records:
-            self._selected_index = (
-                self._selected_index + 1
-            ) % len(self._filtered_records)
+            self._selected_index = (self._selected_index + 1) % len(self._filtered_records)
             self._render_list()
             self._render_detail()
 
     def action_select_previous(self) -> None:
         """Select previous item in list."""
         if self._filtered_records:
-            self._selected_index = (
-                self._selected_index - 1
-            ) % len(self._filtered_records)
+            self._selected_index = (self._selected_index - 1) % len(self._filtered_records)
             self._render_list()
             self._render_detail()
 
@@ -386,16 +382,14 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
         if search_text:
             search_lower = search_text.lower()
             self._filtered_records = [
-                r for r in self._history.get_all_for_profile(self._profile_name)
-                if search_lower in r.query.lower()
-                or search_lower in r.profile_name.lower()
+                r
+                for r in self._history.get_all_for_profile(self._profile_name)
+                if search_lower in r.query.lower() or search_lower in r.profile_name.lower()
             ]
         else:
             self._filtered_records = self._history.get_all_for_profile(self._profile_name)
 
-        if self._filtered_records and self._selected_index >= len(
-            self._filtered_records
-        ):
+        if self._filtered_records and self._selected_index >= len(self._filtered_records):
             self._selected_index = len(self._filtered_records) - 1
 
         self._render_list()
@@ -486,9 +480,7 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
         # In a real app, this would copy to clipboard
         # For now, just show a message
         status = self.query_one("#status-bar", Static)
-        status.update(
-            "[green]✓ Query copied to clipboard (simulated)[/green]"
-        )
+        status.update("[green]✓ Query copied to clipboard (simulated)[/green]")
 
     @on(Button.Pressed, "#btn-clear")
     def on_clear_pressed(self) -> None:
@@ -524,13 +516,14 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
 
         # Update query summary
         summary_widget = self.query_one(QuerySummary)
-        summary_widget.render_summary(record.query, record.report.engine)
+        summary_widget.render_summary(record.query, record.report, record.profile_name)
 
         # Update metrics
         metrics_widget = self.query_one(MetricsPanel)
         metrics_widget.render_metrics(
             record.report.execution_time_ms,
             record.report.plan_tree,
+            record.report.metrics,
         )
 
         # Update plan tree
@@ -563,6 +556,4 @@ class HistoryScreen(Screen[AnalysisRecord | None]):
         if filtered == total:
             status.update(f"[dim]{current}/{total} análisis[/dim]")
         else:
-            status.update(
-                f"[dim]{current}/{filtered} (mostrando) de {total} total[/dim]"
-            )
+            status.update(f"[dim]{current}/{filtered} (mostrando) de {total} total[/dim]")

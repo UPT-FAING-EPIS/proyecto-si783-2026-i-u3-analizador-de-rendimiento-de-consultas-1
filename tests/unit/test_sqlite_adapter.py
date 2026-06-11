@@ -158,7 +158,7 @@ class TestSQLiteAdapterConnection:
         assert isinstance(report, QueryAnalysisReport)
         assert report.engine == "sqlite"
         assert report.query == query
-        assert 0 <= report.score <= 100
+        assert report.execution_time_ms > 0
         assert "customers" in report.raw_plan["full_scan_tables"]
 
     def test_execute_explain_indexed_search(self, connected_adapter):
@@ -167,22 +167,25 @@ class TestSQLiteAdapterConnection:
         report = connected_adapter.execute_explain(query)
 
         assert isinstance(report, QueryAnalysisReport)
-        assert report.score >= 70
+        assert report.plan_tree is not None
+        assert "orders" in report.raw_plan["indexed_searches"]
 
-    def test_execute_explain_generates_warnings(self, connected_adapter):
-        """Test that full scans generate warnings."""
+    def test_execute_explain_preserves_full_scan_metrics(self, connected_adapter):
+        """Test that full scans remain visible in raw engine data."""
         query = "SELECT * FROM customers"
         report = connected_adapter.execute_explain(query)
 
-        assert len(report.warnings) > 0
-        assert any("scan" in w.message.lower() or "SELECT *" in w.message for w in report.warnings)
+        assert "customers" in report.raw_plan["full_scan_tables"]
 
-    def test_execute_explain_generates_recommendations(self, connected_adapter):
-        """Test that recommendations are generated."""
+    def test_execute_explain_has_no_subjective_fields(self, connected_adapter):
+        """Test that reports omit legacy subjective fields."""
         query = "SELECT * FROM customers"
         report = connected_adapter.execute_explain(query)
 
-        assert len(report.recommendations) > 0
+        dumped = report.model_dump()
+        assert "score" not in dumped
+        assert "warnings" not in dumped
+        assert "recommendations" not in dumped
 
     def test_execute_explain_select_statement(self, connected_adapter):
         """Test EXPLAIN works with SELECT."""
@@ -322,7 +325,7 @@ class TestSQLiteAdapterConnection:
 
         report = in_memory_adapter.execute_explain("SELECT * FROM test")
         assert report is not None
-        assert report.score >= 0
+        assert report.plan_summary
 
         metrics = in_memory_adapter.get_metrics()
         assert metrics["tables"] == 1
@@ -347,6 +350,6 @@ class TestSQLiteAdapterConnection:
             report = connected_adapter.execute_explain(query)
             reports.append(report)
             assert report is not None
-            assert 0 <= report.score <= 100
+            assert report.execution_time_ms > 0
 
         assert len(reports) == 3

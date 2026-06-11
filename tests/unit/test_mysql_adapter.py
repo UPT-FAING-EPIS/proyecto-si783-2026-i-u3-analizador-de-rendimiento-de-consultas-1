@@ -131,9 +131,10 @@ class TestMySQLAdapterExplain:
         assert isinstance(report, QueryAnalysisReport)
         assert report.engine == "mysql"
         assert report.query == "SELECT * FROM t"
-        assert 0 <= report.score <= 100
+        assert report.execution_time_ms > 0
+        assert report.plan_tree is not None
 
-    def test_execute_explain_detects_full_scan(self, mysql_config, mocker):
+    def test_execute_explain_preserves_full_scan(self, mysql_config, mocker):
         adapter = MySQLAdapter(mysql_config)
 
         mock_conn = mocker.MagicMock()
@@ -146,10 +147,8 @@ class TestMySQLAdapterExplain:
 
         report = adapter.execute_explain("SELECT * FROM customers")
 
-        assert len(report.warnings) > 0
-        # MySQL full scan with ALL access type and SELECT * - should warn about both
-        assert any("scan" in w.message.lower() or "SELECT *" in w.message for w in report.warnings)
-        assert report.score < 100  # Should be penalized
+        assert report.raw_plan["query_block"]["table"]["access_type"] == "ALL"
+        assert report.plan_tree is not None
 
     def test_execute_explain_detects_indexed(self, mysql_config, mocker):
         adapter = MySQLAdapter(mysql_config)
@@ -164,13 +163,8 @@ class TestMySQLAdapterExplain:
 
         report = adapter.execute_explain("SELECT * FROM orders WHERE customer_id = 1")
 
-        # Should have SELECT * warning but not a scan warning (because indexed)
-        assert any("SELECT *" in w.message for w in report.warnings)
-        # Should not have full scan warning
-        assert not any(
-            "scan" in w.message.lower() and "full" in w.message.lower() for w in report.warnings
-        )
-        assert report.score >= 90  # Good score with index
+        assert report.raw_plan["query_block"]["table"]["key"] == "idx_cust_id"
+        assert report.plan_summary
 
     def test_execute_explain_with_filesort(self, mysql_config, mocker):
         adapter = MySQLAdapter(mysql_config)
@@ -185,9 +179,7 @@ class TestMySQLAdapterExplain:
 
         report = adapter.execute_explain("SELECT * FROM t ORDER BY col")
 
-        # Expect warnings (either filesort or SELECT * or both)
-        assert len(report.warnings) > 0
-        assert report.score < 100
+        assert report.raw_plan["query_block"]["order_by"][0]["filesort"] is True
 
     def test_get_metrics_structure(self, mysql_config, mocker):
         adapter = MySQLAdapter(mysql_config)

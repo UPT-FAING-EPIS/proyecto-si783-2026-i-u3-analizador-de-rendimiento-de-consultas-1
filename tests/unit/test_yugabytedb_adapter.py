@@ -314,10 +314,9 @@ class TestYugabyteDBAdapterExecuteExplain:
         assert isinstance(report, QueryAnalysisReport)
         assert report.query == "SELECT * FROM users"
         assert report.engine == "yugabytedb"
-        assert 0 <= report.score <= 100
         assert report.execution_time_ms > 0
-        assert len(report.warnings) >= 0
-        assert len(report.recommendations) >= 0
+        assert report.plan_tree is not None
+        assert report.raw_plan is not None
 
     @patch("query_analyzer.adapters.sql.yugabytedb.psycopg2.connect")
     def test_execute_explain_not_connected(self, mock_psycopg2_connect: Mock) -> None:

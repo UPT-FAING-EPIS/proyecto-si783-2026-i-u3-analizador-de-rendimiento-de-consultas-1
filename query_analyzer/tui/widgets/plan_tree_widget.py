@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from rich.syntax import Syntax
 from textual.app import ComposeResult
 from textual.containers import Container, Vertical
+from textual.markup import escape as markup_escape
 from textual.widgets import Label, Static
 
 from query_analyzer.adapters.models import PlanNode
@@ -75,23 +78,42 @@ class PlanTreeWidget(Container):
             yield Label("Execution Plan", classes="plan-title")
             yield Static(id="plan-content")
 
-    def render_plan(self, plan_tree: PlanNode | None) -> None:
+    def render_plan(
+        self, plan_tree: PlanNode | None, raw_plan: dict[str, Any] | None = None
+    ) -> None:
         """Render execution plan tree.
 
         Args:
             plan_tree: Root node of execution plan tree
+            raw_plan: Raw execution plan from the database engine
         """
         plan_content = self.query_one("#plan-content", Static)
-
         try:
             if plan_tree is None:
-                plan_content.update("[dim]No plan tree available[/dim]")
+                if raw_plan:
+                    formatted_json = json.dumps(raw_plan, indent=2, ensure_ascii=False)
+                    syntax_json = Syntax(formatted_json, "json", theme="monokai", line_numbers=True)
+                    plan_content.update(syntax_json)
+                else:
+                    plan_content.update("[dim]No plan tree or raw plan available[/dim]")
                 return
 
-            lines = self._format_plan_tree(plan_tree)
-            plan_content.update("\n".join(lines))
+            try:
+                lines = self._format_plan_tree(plan_tree)
+                plan_content.update("\n".join(lines))
+            except Exception as e:
+                if raw_plan:
+                    formatted_json = json.dumps(raw_plan, indent=2, ensure_ascii=False)
+                    syntax_json = Syntax(formatted_json, "json", theme="monokai", line_numbers=True)
+                    plan_content.update(syntax_json)
+                else:
+                    plan_content.update(
+                        f"[yellow]Error rendering plan tree and no raw plan: {markup_escape(str(e))}[/yellow]"
+                    )
         except Exception as e:
-            plan_content.update(f"[yellow]Error rendering plan: {e}[/yellow]")
+            plan_content.update(
+                f"[yellow]Unexpected error rendering plan: {markup_escape(str(e))}[/yellow]"
+            )
 
     def set_loading_state(self) -> None:
         """Show loading state."""
@@ -190,19 +212,13 @@ class PlanTreeWidget(Container):
 
         # Execution time
         if node.actual_time_ms is not None:
-            if node.actual_time_ms < 1:
-                color = "$success"
-            elif node.actual_time_ms < 10:
-                color = "$warning"
-            else:
-                color = "$error"
-            parts.append(f"[{color}]{node.actual_time_ms:.2f}ms[/{color}]")
+            parts.append(f"[cyan]{node.actual_time_ms:.2f}ms[/cyan]")
 
         # Additional properties
         if node.properties:
             prop_str = PlanTreeWidget._format_properties(node.properties)
             if prop_str:
-                parts.append(f"[magenta]{prop_str}[/magenta]")
+                parts.append(f"[magenta]{markup_escape(prop_str)}[/magenta]")
 
         return " ".join(parts)
 
@@ -217,38 +233,39 @@ class PlanTreeWidget(Container):
             Colored node type string
         """
         node_lower = node_type.lower()
+        safe = markup_escape(node_type)
 
         if "scan" in node_lower:
             if "index" in node_lower or "idx" in node_lower:
-                return f"[green bold]{node_type}[/green bold]"
+                return f"[green bold]{safe}[/green bold]"
             elif "seq" in node_lower or "sequential" in node_lower:
-                return f"[yellow bold]{node_type}[/yellow bold]"
+                return f"[yellow bold]{safe}[/yellow bold]"
             else:
-                return f"[cyan bold]{node_type}[/cyan bold]"
+                return f"[cyan bold]{safe}[/cyan bold]"
 
         if "join" in node_lower:
             if "nested" in node_lower:
-                return f"[yellow bold]{node_type}[/yellow bold]"
+                return f"[yellow bold]{safe}[/yellow bold]"
             else:
-                return f"[blue bold]{node_type}[/blue bold]"
+                return f"[blue bold]{safe}[/blue bold]"
 
         if "sort" in node_lower:
-            return f"[magenta bold]{node_type}[/magenta bold]"
+            return f"[magenta bold]{safe}[/magenta bold]"
 
         if "aggregate" in node_lower or "group" in node_lower:
-            return f"[cyan bold]{node_type}[/cyan bold]"
+            return f"[cyan bold]{safe}[/cyan bold]"
 
         if "filter" in node_lower or "where" in node_lower:
-            return f"[blue bold]{node_type}[/blue bold]"
+            return f"[blue bold]{safe}[/blue bold]"
 
         if "limit" in node_lower:
-            return f"[green bold]{node_type}[/green bold]"
+            return f"[green bold]{safe}[/green bold]"
 
         if "hash" in node_lower:
-            return f"[yellow bold]{node_type}[/yellow bold]"
+            return f"[yellow bold]{safe}[/yellow bold]"
 
         # Default styling
-        return f"[white bold]{node_type}[/white bold]"
+        return f"[white bold]{safe}[/white bold]"
 
     @staticmethod
     def _format_properties(properties: dict[str, Any], max_items: int = 3) -> str:
@@ -278,7 +295,7 @@ class PlanTreeWidget(Container):
         relevant_props = []
         for key in important_keys:
             if key in properties and properties[key]:
-                relevant_props.append(f"{key}={properties[key]}")
+                relevant_props.append(f"{key}={str(properties[key])}")
 
         # Add remaining properties up to max_items
         for key, value in properties.items():

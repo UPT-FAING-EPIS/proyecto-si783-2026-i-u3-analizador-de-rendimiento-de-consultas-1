@@ -7,6 +7,7 @@ from query_analyzer.tui.widgets.ai_insights_panel import (
     AIObservationsPanel,
     AIRecommendationsPanel,
 )
+from query_analyzer.tui.widgets.diagnostic_modal import DiagnosticModal
 from query_analyzer.tui.widgets.metrics_panel import MetricsPanel
 from query_analyzer.tui.widgets.plan_tree_widget import PlanTreeWidget
 from query_analyzer.tui.widgets.query_summary import QuerySummary
@@ -15,6 +16,7 @@ __all__ = [
     "AIInsightsPanel",
     "AIObservationsPanel",
     "AIRecommendationsPanel",
+    "DiagnosticModal",
     "MetricsPanel",
     "PlanTreeWidget",
     "QuerySummary",

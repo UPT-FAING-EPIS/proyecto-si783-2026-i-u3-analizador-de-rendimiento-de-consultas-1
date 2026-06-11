@@ -26,8 +26,6 @@ from .models import (
     ConnectionConfig,
     PlanNode,
     QueryAnalysisReport,
-    Recommendation,
-    Warning,
 )
 from .nosql import CassandraAdapter, DynamoDBAdapter, MongoDBAdapter
 from .redis import RedisAdapter
@@ -58,8 +56,6 @@ __all__ = [
     "ConnectionConfig",
     "PlanNode",
     "QueryAnalysisReport",
-    "Warning",
-    "Recommendation",
     # Base
     "BaseAdapter",
     # Registry

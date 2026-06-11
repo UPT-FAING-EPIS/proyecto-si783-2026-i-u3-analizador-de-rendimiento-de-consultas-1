@@ -1,4 +1,4 @@
-"""Neo4j PROFILE plan parser and analyzer."""
+"""Neo4j PROFILE plan parser."""
 
 from typing import Any
 
@@ -7,11 +7,7 @@ class Neo4jExplainParser:
     """Parser for Neo4j PROFILE output.
 
     Analyzes execution plans returned by PROFILE command, extracts metrics
-    (db_hits, rows, execution time), and normalizes to engine-agnostic format
-    for AntiPatternDetector.
-
-    Attributes:
-        expand_threshold: Expand node threshold for detecting unbounded expansion
+    (db_hits, rows, execution time), and normalizes to engine-agnostic format.
     """
 
     def __init__(self, expand_threshold: int = 1000) -> None:
@@ -41,7 +37,7 @@ class Neo4jExplainParser:
                 - filter_nodes: Filter nodes
                 - join_nodes: CartesianProduct, etc.
                 - most_expensive_node: Node with highest db_hits
-                - all_nodes: All nodes for AntiPatternDetector
+                - all_nodes: All observed plan nodes
         """
         # Extract profile statistics
         profile_data = profile_result.get("profile", {})
@@ -135,13 +131,13 @@ class Neo4jExplainParser:
         """Convert Neo4j plan to engine-agnostic format.
 
         Transforms Neo4j-specific operator types and metrics to a normalized
-        structure that AntiPatternDetector understands.
+        structure shared by renderers and integrations.
 
         Args:
             plan_root: Root node of Neo4j PROFILE plan
 
         Returns:
-            Normalized plan node structure for AntiPatternDetector
+            Normalized plan node structure
         """
         if not plan_root:
             return {}
@@ -213,100 +209,3 @@ class Neo4jExplainParser:
             return "ProduceResults"
 
         return operator_type
-
-    def detect_anti_patterns_cypher(self, plan_root: dict[str, Any]) -> list[dict[str, Any]]:
-        """Detect anti-patterns specific to Cypher in the plan tree.
-
-        Args:
-            plan_root: Root node of Neo4j PROFILE plan
-
-        Returns:
-            List of detected anti-patterns with details
-        """
-        anti_patterns: list[dict[str, Any]] = []
-        all_nodes: list[dict[str, Any]] = []
-
-        # Collect all nodes
-        self._traverse_plan_tree(plan_root, all_nodes)
-
-        # 1. Detect AllNodesScan
-        for node in all_nodes:
-            if node.get("operatorType") == "AllNodesScan":
-                anti_patterns.append(
-                    {
-                        "type": "AllNodesScan",
-                        "severity": "HIGH",
-                        "node": node,
-                        "message": "Query scans all nodes without label filter",
-                    }
-                )
-
-        # 2. Detect CartesianProduct
-        for node in all_nodes:
-            if node.get("operatorType") == "CartesianProduct":
-                anti_patterns.append(
-                    {
-                        "type": "CartesianProduct",
-                        "severity": "HIGH",
-                        "node": node,
-                        "message": "Cartesian product detected - likely disconnected patterns in MATCH",
-                    }
-                )
-
-        # 3. Detect NodeByLabelScan without index on filtered property
-        for node in all_nodes:
-            if node.get("operatorType") == "NodeByLabelScan":
-                # Check if next node is a Filter
-                if self._has_filter_child(node):
-                    anti_patterns.append(
-                        {
-                            "type": "LabelScanWithFilter",
-                            "severity": "MEDIUM",
-                            "node": node,
-                            "message": "Label scan followed by filter - consider creating index",
-                        }
-                    )
-
-        # 4. Detect Expand without limit on high-degree nodes
-        for node in all_nodes:
-            if "Expand" in node.get("operatorType", ""):
-                rows = int(node.get("rows", 0))
-                if rows > self.expand_threshold and rows > 0:
-                    anti_patterns.append(
-                        {
-                            "type": "UnboundedExpand",
-                            "severity": "MEDIUM",
-                            "node": node,
-                            "message": f"Expand without limit returns {rows} rows",
-                        }
-                    )
-
-        # 5. Detect Filter after Expand (inefficient)
-        for node in all_nodes:
-            if "Expand" in node.get("operatorType", ""):
-                if self._has_filter_child(node):
-                    anti_patterns.append(
-                        {
-                            "type": "FilterAfterExpand",
-                            "severity": "LOW",
-                            "node": node,
-                            "message": "Filter applied after Expand - move filter before Expand if possible",
-                        }
-                    )
-
-        return anti_patterns
-
-    def _has_filter_child(self, node: dict[str, Any]) -> bool:
-        """Check if node has Filter in its children.
-
-        Args:
-            node: Plan node
-
-        Returns:
-            True if Filter is found in children
-        """
-        children = node.get("children", [])
-        for child in children:
-            if child.get("operatorType") == "Filter":
-                return True
-        return False

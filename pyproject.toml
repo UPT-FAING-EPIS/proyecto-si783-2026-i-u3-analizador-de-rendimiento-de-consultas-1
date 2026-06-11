@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "query-analyzer"
-version = "0.1.0"
-description = "Add your description here"
+version = "2.0.0"
+description = "Analizador de planes de ejecucion y metricas reales para multiples motores"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -40,12 +40,14 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.14.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.15.9",
     # Type stubs para librerías externas
     "types-psycopg2>=2.9.21.19.1",
     "types-PyMySQL>=1.1.0.20240815",
     "types-PyYAML>=6.0.12.20240917",
     "types-redis>=4.6.0",
+    "types-requests>=2.32.4.20260107",
     "moto[dynamodb]>=4.2.0",
     # Cassandra driver (optional - Windows build issues on Python 3.14)
     # For local Cassandra integration testing: pip install cassandra-driver==3.29.3

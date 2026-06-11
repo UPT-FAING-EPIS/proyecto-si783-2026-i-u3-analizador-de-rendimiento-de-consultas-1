@@ -197,9 +197,9 @@ class MSSQLAdapter(BaseAdapter):
         def get_first_node_type(node: Any) -> str:
             """Extract first node type from plan tree."""
             if hasattr(node, "node_type"):
-                return node.node_type
+                return str(node.node_type)
             if isinstance(node, dict) and "Node Type" in node:
-                return node["Node Type"]
+                return str(node["Node Type"])
             return "Unknown"
 
         first_op = get_first_node_type(plan_tree)

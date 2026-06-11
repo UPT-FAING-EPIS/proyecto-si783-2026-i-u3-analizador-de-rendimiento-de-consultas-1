@@ -1,15 +1,20 @@
+[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/EukCIKzm)
+[![Open in Codespaces](https://classroom.github.com/assets/launch-codespace-2972f46106e565e64193e422d61a12cf1da4916b45550586e14ef0a7c637dd04.svg)](https://classroom.github.com/open-in-codespaces?assignment_repo_id=24102472)
+
 # Query Analyzer
 
 [![Python 3.14+](https://img.shields.io/badge/Python-3.14%2B-blue)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/Package%20Manager-uv-orange)](https://github.com/astral-sh/uv)
 
-Analizador de rendimiento de consultas para SQL, NoSQL y TimeSeries con interfaz TUI en terminal.
+Analizador de planes de ejecucion y metricas reales para SQL, NoSQL, grafos y
+TimeSeries, con interfaces CLI y TUI.
 
 ## Que puedes hacer
 
-- Analizar planes de ejecucion y detectar anti-patrones de rendimiento.
+- Consultar planes de ejecucion y metricas observadas directamente en el motor.
 - Trabajar con multiples motores desde una sola herramienta CLI/TUI.
-- Obtener recomendaciones de optimizacion orientadas al motor.
+- Revisar estructura del plan, tiempos, filas y uso de recursos sin puntajes arbitrarios.
+- Solicitar una interpretacion opcional mediante IA, presentada por separado de los datos reales.
 
 ## Motores soportados
 
@@ -111,8 +116,8 @@ Requisitos:
 - uv
 
 ```bash
-git clone https://github.com/UPT-FAING-EPIS/proyecto-si783-2026-i-u1-analizador-de-rendimiento-de-consultas.git
-cd proyecto-si783-2026-i-u1-analizador-de-rendimiento-de-consultas
+git clone https://github.com/UPT-FAING-EPIS/proyecto-si783-2026-i-u2-rendimiento-de-consultas-2.git
+cd proyecto-si783-2026-i-u2-rendimiento-de-consultas-2
 uv sync
 uv run query_analyzer
 ```

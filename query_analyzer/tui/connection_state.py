@@ -6,9 +6,13 @@ Singleton that manages the active connection profile and adapter instance.
 from collections.abc import Iterable
 from enum import Enum
 from threading import Lock
+from typing import TYPE_CHECKING
 
 from query_analyzer.adapters import AdapterRegistry, BaseAdapter
 from query_analyzer.config import ConfigManager, ProfileConfig
+
+if TYPE_CHECKING:
+    from query_analyzer.core.connection_diagnostics import ConnectionDiagnostic
 
 
 class ConnectionStatus(Enum):
@@ -43,6 +47,7 @@ class ConnectionManager:
     _last_attempted_profile_name: str | None = None
     _profile_statuses: dict[str, ConnectionStatus] = {}
     _profile_errors: dict[str, str | None] = {}
+    _profile_diagnostics: dict[str, ConnectionDiagnostic] = {}
     _status_lock: Lock = Lock()
 
     @classmethod
@@ -64,6 +69,7 @@ class ConnectionManager:
         cls._last_attempted_profile_name = None
         cls._profile_statuses = {}
         cls._profile_errors = {}
+        cls._profile_diagnostics = {}
 
     @property
     def config_manager(self) -> ConfigManager:
@@ -148,6 +154,14 @@ class ConnectionManager:
         with self._status_lock:
             return self._profile_statuses.get(profile_name, ConnectionStatus.DISCONNECTED)
 
+    def status_counts(self) -> dict[ConnectionStatus, int]:
+        """Return a snapshot with the number of profiles in each state."""
+        with self._status_lock:
+            return {
+                status: sum(1 for value in self._profile_statuses.values() if value == status)
+                for status in ConnectionStatus
+            }
+
     def set_profile_status(
         self,
         profile_name: str,
@@ -168,29 +182,21 @@ class ConnectionManager:
         self.set_profile_status(profile_name, ConnectionStatus.CONNECTING)
 
         try:
-            profile = self.get_profile(profile_name)
             connection_config = self.config_manager.get_connection_config(profile_name)
+            from query_analyzer.core.connection_diagnostics import ConnectionDiagnosticsService
 
-            if not AdapterRegistry.is_registered(profile.engine):
-                from query_analyzer.adapters.exceptions import UnsupportedEngineError
+            diagnostic = ConnectionDiagnosticsService.run_diagnostics(
+                profile_name, connection_config
+            )
 
-                raise UnsupportedEngineError(profile.engine, AdapterRegistry.list_engines())
+            with self._status_lock:
+                self._profile_diagnostics[profile_name] = diagnostic
 
-            adapter = AdapterRegistry.create(profile.engine, connection_config)
-            try:
-                adapter.connect()
-                is_valid = adapter.test_connection()
-            finally:
-                try:
-                    adapter.disconnect()
-                except Exception:
-                    pass
-
-            if is_valid:
+            if diagnostic.status == "connected":
                 self.set_profile_status(profile_name, ConnectionStatus.CONNECTED)
                 return ConnectionStatus.CONNECTED
 
-            self.set_profile_status(profile_name, ConnectionStatus.ERROR, "Connection test failed")
+            self.set_profile_status(profile_name, ConnectionStatus.ERROR, diagnostic.safe_message)
             return ConnectionStatus.ERROR
         except Exception as e:
             self.set_profile_status(profile_name, ConnectionStatus.ERROR, str(e))
@@ -209,6 +215,7 @@ class ConnectionManager:
         with self._status_lock:
             self._profile_statuses.pop(name, None)
             self._profile_errors.pop(name, None)
+            self._profile_diagnostics.pop(name, None)
 
     def update_profile(self, name: str, profile: ProfileConfig) -> None:
         """Actualiza un perfil existente."""
@@ -264,6 +271,18 @@ class ConnectionManager:
             self.set_profile_status(profile_name, ConnectionStatus.CONNECTED)
             self._last_profile_name = profile_name
             self.set_default_profile(profile_name)
+
+            # Update diagnostic cache on successful manual connection
+            from query_analyzer.core.connection_diagnostics import (
+                ConnectionDiagnosticsService,
+            )
+
+            diag = ConnectionDiagnosticsService.create_connected_diagnostic(
+                profile_name, connection_config
+            )
+            with self._status_lock:
+                self._profile_diagnostics[profile_name] = diag
+
             return True
 
         except Exception as e:
@@ -291,3 +310,13 @@ class ConnectionManager:
         else:
             self._status = ConnectionStatus.DISCONNECTED
             self._error_message = None
+
+    def get_diagnostic(self, profile_name: str) -> ConnectionDiagnostic | None:
+        """Obtiene el último resultado de diagnóstico para un perfil."""
+        with self._status_lock:
+            return self._profile_diagnostics.get(profile_name)
+
+    def set_diagnostic(self, profile_name: str, diagnostic: ConnectionDiagnostic) -> None:
+        """Establece el último resultado de diagnóstico para un perfil."""
+        with self._status_lock:
+            self._profile_diagnostics[profile_name] = diagnostic

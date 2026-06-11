@@ -208,19 +208,19 @@ class MongoDBAdapter(BaseAdapter):
         Returns:
             Cadena con resumen simple (ej: "COLLSCAN" o "IXSCAN")
         """
-        executionStages = explain_result.get("executionStages", {})
-        stage = executionStages.get("stage", "Unknown")
-        
+        execution_stages = explain_result.get("executionStages", {})
+        stage = execution_stages.get("stage", "Unknown")
+
         # Add key information if available
-        if "executionStages" in executionStages:
-            substages = executionStages.get("executionStages", [])
+        if "executionStages" in execution_stages:
+            substages = execution_stages.get("executionStages", [])
             if substages:
                 if isinstance(substages, list) and len(substages) > 0:
                     first_substage = substages[0].get("stage", "")
                     if first_substage:
                         return f"{stage} → {first_substage}"
-        
-        return stage
+
+        return str(stage)
 
     def get_slow_queries(self, threshold_ms: int = 100) -> list[dict]:
         """Retrieve slow queries from profiling.

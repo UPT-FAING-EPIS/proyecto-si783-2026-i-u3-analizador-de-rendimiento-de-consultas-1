@@ -103,7 +103,7 @@ class InfluxDBFluxParser:
         """Convert parsed Flux structure to normalized engine-agnostic format.
 
         Normalizes Flux-specific structure to match the format used by
-        AntiPatternDetector, which is independent of the database engine.
+        renderers and integrations independently of the database engine.
 
         Adds a flux_metadata field containing Flux-specific information not
         present in SQL engines.

@@ -65,9 +65,10 @@ class ProfileSelector(Container):
         yield DataTable(id="profile-table")
         with Horizontal(classes="actions"):
             yield Button("+ Agregar", variant="primary", id="btn-add")
-            yield Button("✏ Editar", variant="default", id="btn-edit")
-            yield Button("✕ Eliminar", variant="default", id="btn-delete")
-            yield Button("▶ Analizar", variant="success", id="btn-analyze")
+            yield Button("Editar", variant="default", id="btn-edit")
+            yield Button("Eliminar", variant="default", id="btn-delete")
+            yield Button("Diagnóstico", variant="default", id="btn-diagnose")
+            yield Button("Analizar", variant="success", id="btn-analyze")
 
     def on_mount(self) -> None:
         table = self.query_one("#profile-table", DataTable)
@@ -159,6 +160,9 @@ class ProfileSelector(Container):
         elif button_id == "btn-delete":
             if self._selected_profile:
                 self.post_message(ProfileAction("delete", self._selected_profile))
+        elif button_id == "btn-diagnose":
+            if self._selected_profile:
+                self.post_message(ProfileAction("diagnose", self._selected_profile))
         elif button_id == "btn-analyze":
             if self._selected_profile:
                 self.post_message(ProfileAction("analyze", self._selected_profile))
@@ -179,13 +183,28 @@ class ProfileSelector(Container):
     def _update_analyze_button_state(self) -> None:
         try:
             analyze_button = self.query_one("#btn-analyze", Button)
+            edit_button = self.query_one("#btn-edit", Button)
+            delete_button = self.query_one("#btn-delete", Button)
+            diagnose_button = self.query_one("#btn-diagnose", Button)
         except Exception:
             return
 
-        analyze_button.disabled = not self._is_selected_profile_connected()
+        has_selection = self._selected_profile is not None and self._selected_profile != ""
+        is_connecting = False
+        if has_selection and self._selected_profile is not None:
+            is_connecting = (
+                self._manager.status_for_profile(self._selected_profile)
+                == ConnectionStatus.CONNECTING
+            )
+        edit_button.disabled = not has_selection or is_connecting
+        delete_button.disabled = not has_selection or is_connecting
+        diagnose_button.disabled = not has_selection or is_connecting
+        analyze_button.disabled = not (has_selection and self._is_selected_profile_connected())
 
     def _is_selected_profile_connected(self) -> bool:
         if not self._selected_profile:
             return False
 
-        return self._manager.status_for_profile(self._selected_profile) == ConnectionStatus.CONNECTED
+        return (
+            self._manager.status_for_profile(self._selected_profile) == ConnectionStatus.CONNECTED
+        )

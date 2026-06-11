@@ -8,10 +8,9 @@ and use CockroachDBParser for CRDB-specific optimizations:
 - Minimal metrics (no admin-only queries in v1)
 """
 
-import json
 import logging
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Any
 
 import psycopg2
 from psycopg2 import OperationalError
@@ -213,41 +212,13 @@ class CockroachDBAdapter(BaseAdapter):
                 table_name = root_plan.get("Relation Name", "")
                 if table_name:
                     return f"{node_type} on {table_name}"
-                return node_type
+                return str(node_type)
         elif isinstance(explain_data, str):
             # Extract first line of text plan
             first_line = explain_data.split("\n")[0] if explain_data else "Unknown"
             return first_line.strip()
-        
+
         return "Unknown plan"
-
-    def _detect_crdb_specific_issues(self, plan_text: str, metrics: dict[str, Any]) -> list[str]:
-        """Detect CockroachDB-specific anti-patterns from EXPLAIN output.
-
-        Checks for:
-        - Cross-region full scans (CRITICAL)
-        - Full table scans (HIGH)
-
-        Args:
-            plan_text: EXPLAIN output as text
-            metrics: Parsed metrics dict (for future use)
-
-        Returns:
-            List of warning strings (may be empty)
-        """
-        warnings = []
-        plan_lower = plan_text.lower()
-
-        # Detect cross-region full scan (CRITICAL)
-        if "full scan" in plan_lower and "region" in plan_lower:
-            warnings.append(
-                "CRITICAL: Full scan across multiple regions detected — high latency risk"
-            )
-        # Detect full scan (HIGH) — only if not already caught by cross-region
-        elif "full scan" in plan_lower:
-            warnings.append("Full table scan detected — consider creating an index")
-
-        return warnings
 
     def _parse_text_to_json_plan(self, explain_text: str) -> dict[str, Any]:
         """Convert CRDB v26.1+ text EXPLAIN ANALYZE output to JSON-like dict.

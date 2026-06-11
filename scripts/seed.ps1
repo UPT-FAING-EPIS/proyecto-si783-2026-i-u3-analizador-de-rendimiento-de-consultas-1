@@ -22,11 +22,11 @@ function Invoke-SeedFile {
 Write-Host "Seeding databases with test data..." -ForegroundColor Green
 Write-Host ""
 
-# Prefer bash implementation on Windows when available.
-# This avoids PowerShell native-pipe encoding issues and keeps behavior aligned with macOS/Linux.
+# Prefer bash implementation on Windows when available, but only if docker is accessible within that bash environment.
+# This avoids delegation to a WSL environment where Docker Desktop integration might not be enabled.
 $bashCommand = Get-Command bash -ErrorAction SilentlyContinue
 if ($null -ne $bashCommand) {
-    & bash -lc "true" *> $null
+    & bash -c "docker --version" *> $null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Using bash seeding script for cross-platform compatibility..." -ForegroundColor Gray
         & bash "scripts/seed.sh"

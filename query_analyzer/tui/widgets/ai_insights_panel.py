@@ -5,17 +5,17 @@ from __future__ import annotations
 from rich.syntax import Syntax
 from textual.app import ComposeResult
 from textual.containers import Container, Vertical
+from textual.markup import escape as markup_escape
 from textual.widgets import Label, ListItem, ListView, Static
 
 from query_analyzer.adapters.models import AIAnalysisResult
 
-
-# Severity icons for observations
+# Severity text prefixes for observations (no emojis)
 OBSERVATION_ICONS = {
-    "CRITICAL": "[red bold]⚠️ [/red bold]",
-    "HIGH": "[red bold]![/red bold]",
-    "MEDIUM": "[yellow bold]▲[/yellow bold]",
-    "LOW": "[blue bold]ℹ️[/blue bold]",
+    "CRITICAL": "[red bold][CRITICO][/red bold]",
+    "HIGH": "[red bold][ALTO][/red bold]",
+    "MEDIUM": "[yellow bold][MEDIO][/yellow bold]",
+    "LOW": "[blue bold][INFO][/blue bold]",
 }
 
 
@@ -23,6 +23,7 @@ class AIInsightsPanel(Container):
     """Panel for displaying AI-powered analysis insights.
 
     Displays:
+    - AI Warning banner (permanent, no emojis)
     - AI Summary (natural language overview)
     - Observations (severity-based insights)
     - Recommendations (with SQL code snippets)
@@ -50,6 +51,15 @@ class AIInsightsPanel(Container):
         text-style: bold;
         margin-bottom: 1;
         color: $primary;
+    }
+
+    AIInsightsPanel .ai-warning-banner {
+        background: $boost;
+        border-left: solid $warning;
+        padding: 0 1;
+        margin-bottom: 1;
+        color: $text-muted;
+        text-style: italic;
     }
 
     AIInsightsPanel .section-title {
@@ -105,45 +115,61 @@ class AIInsightsPanel(Container):
     """
 
     def compose(self) -> ComposeResult:
-        """Render initial layout."""
+        """Render initial layout with permanent AI warning banner."""
         with Vertical():
             yield Label("AI Analysis", classes="panel-title")
+            yield Static(
+                "AVISO DE IA: La interpretación por Inteligencia Artificial es opcional, generativa y puede contener imprecisiones.",
+                classes="ai-warning-banner",
+            )
             yield Static(id="insights-content")
 
-    def render_ai_analysis(self, ai_analysis: AIAnalysisResult | None) -> None:
-        """Render AI analysis results or placeholder.
+    def render_ai_analysis(
+        self, ai_analysis: AIAnalysisResult | None, ai_error: str | None = None
+    ) -> None:
+        """Render AI analysis results, configuration placeholder, or execution error.
 
         Args:
             ai_analysis: AIAnalysisResult object or None
+            ai_error: Detalle del error en la consulta de la IA, si existiera.
         """
         insights_content = self.query_one("#insights-content", Static)
 
-        if ai_analysis is None:
+        # Estado: IA configurada pero fallida
+        if ai_error:
             insights_content.update(
-                "[yellow]⚙ AI not configured[/yellow]\n"
-                "[dim]Set QA_AI_BASE_URL and QA_AI_API_KEY to enable[/dim]"
+                f"[red]Error en la consulta de IA:[/red]\n[red]{markup_escape(ai_error)}[/red]"
             )
             return
 
+        # Estado: IA deshabilitada/no configurada
+        if ai_analysis is None:
+            insights_content.update(
+                "AI no configurada\n"
+                "[dim]Configure las variables de entorno QA_AI_BASE_URL y QA_AI_API_KEY para habilitar el análisis de IA.[/dim]"
+            )
+            return
+
+        # Estado: Resultados de IA exitosos
         try:
             lines = self._format_ai_analysis(ai_analysis)
             insights_content.update("\n".join(lines))
         except Exception as e:
-            insights_content.update(f"[red]Error rendering AI analysis: {e}[/red]")
+            insights_content.update(f"[red]Error al renderizar el análisis de IA: {e}[/red]")
 
     def set_loading_state(self) -> None:
         """Show loading state."""
         insights_content = self.query_one("#insights-content", Static)
-        insights_content.update("[yellow]🔄 Analyzing with AI...[/yellow]")
+        insights_content.update("[yellow]Analizando con IA...[/yellow]")
 
-    def set_error(self, message: str = "Error during AI analysis") -> None:
+    def set_error(self, message: str = "Error al realizar el análisis de IA") -> None:
         """Show error state.
 
         Args:
             message: Error message to display
         """
         insights_content = self.query_one("#insights-content", Static)
-        insights_content.update(f"[red]✗ {message}[/red]")
+        insights_content.update(f"[red]Error: {message}[/red]")
 
     def clear(self) -> None:
         """Clear analysis content."""
@@ -272,13 +298,10 @@ class AIObservationsPanel(Container):
         if not observations:
             list_view.append(ListItem(Label("[dim]No observations[/dim]")))
             return
-
-        for idx, obs in enumerate(observations, start=1):
+        for obs in observations:
             severity = AIInsightsPanel._extract_severity(obs)
             icon = OBSERVATION_ICONS.get(severity, "•")
-            list_view.append(
-                ListItem(Static(f"{icon} {obs}"))
-            )
+            list_view.append(ListItem(Static(f"{icon} {obs}")))
 
     def set_loading_state(self) -> None:
         """Show loading state."""
@@ -372,11 +395,12 @@ class AIRecommendationsPanel(Container):
             if "```sql" in rec or "```" in rec:
                 # Extract code snippet
                 import re
+
                 code_match = re.search(r"```(?:sql)?\n(.*?)\n```", rec, re.DOTALL)
                 if code_match:
                     code = code_match.group(1)
                     rec_text = rec[: code_match.start()].strip()
-                    
+
                     sql_syntax = Syntax(
                         code,
                         "sql",
@@ -384,7 +408,7 @@ class AIRecommendationsPanel(Container):
                         line_numbers=False,
                         word_wrap=True,
                     )
-                    
+
                     list_view.append(
                         ListItem(
                             Static(f"{idx}. {rec_text}", classes="rec-title"),

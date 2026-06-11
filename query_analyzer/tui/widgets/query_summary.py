@@ -5,26 +5,22 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from rich.syntax import Syntax
 from textual.app import ComposeResult
 from textual.containers import Container, Vertical
-from textual.widgets import Label, Static
+from textual.markup import escape as markup_escape
+from textual.widgets import Button, Label, Static
+
+from query_analyzer.adapters.models import QueryAnalysisReport
 
 
 class QuerySummary(Container):
-    """Panel displaying query metadata (type, tables, joins, conditions).
-
-    Extracts and displays:
-    - Query type (SELECT, INSERT, UPDATE, DELETE, etc.)
-    - Tables involved
-    - Join count and types
-    - WHERE clauses detected
-    - ORDER BY, GROUP BY info
-    """
+    """Panel displaying query metadata and analysis summary."""
 
     DEFAULT_CSS = """
     QuerySummary {
         width: 1fr;
-        height: auto;
+        height: 1fr;
         border: solid $accent;
         padding: 1;
         background: $panel;
@@ -41,71 +37,114 @@ class QuerySummary(Container):
         color: $primary;
     }
 
-    QuerySummary .summary-row {
-        width: 1fr;
+    QuerySummary .section-label {
+        text-style: bold;
+        color: $text-muted;
+        margin-top: 1;
+        margin-bottom: 0;
+    }
+
+    QuerySummary .summary-section {
+        margin-bottom: 1;
         height: auto;
+    }
+
+    QuerySummary .summary-sql-box {
+        border: solid $accent;
+        background: $boost;
+        padding: 1;
+        height: auto;
+        min-height: 3;
+        max-height: 12;
+        overflow-y: scroll;
         margin-bottom: 1;
     }
 
-    QuerySummary .summary-label {
-        width: 15;
-        text-align: right;
-        margin-right: 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-
-    QuerySummary .summary-value {
-        width: 1fr;
-        color: $text;
-    }
-
-    QuerySummary .no-data {
-        color: $text-muted;
-        text-style: italic;
+    QuerySummary #btn-copy-query {
+        width: auto;
+        min-width: 20;
+        height: 3;
     }
     """
 
     def compose(self) -> ComposeResult:
         """Render initial layout."""
-        with Vertical():
-            yield Label("Query Summary", classes="query-title")
-            yield Static(id="summary-content")
+        with Vertical(id="summary-container"):
+            yield Label("Resumen de Consulta", classes="query-title")
+            yield Static(id="summary-context", classes="summary-section")
+            yield Static(id="summary-plan", classes="summary-section")
+            yield Label("Consulta SQL:", classes="section-label")
+            yield Static(id="summary-sql", classes="summary-sql-box")
+            yield Button("Copiar Consulta", id="btn-copy-query")
 
-    def render_summary(self, query: str, engine: str) -> None:
-        """Extract and render query metadata.
+    def render_summary(
+        self, query: str, report: QueryAnalysisReport, profile_name: str = ""
+    ) -> None:
+        """Extract and render query metadata and context.
 
         Args:
             query: SQL query text
-            engine: Database engine name
+            report: QueryAnalysisReport object
+            profile_name: Name of the active database profile
         """
-        summary_content = self.query_one("#summary-content", Static)
+        self._current_query = query
 
-        try:
-            metadata = self._extract_metadata(query, engine)
-            lines = self._format_metadata(metadata)
-            summary_content.update("\n".join(lines))
-        except Exception as e:
-            summary_content.update(f"[yellow]Error parsing query: {e}[/yellow]")
+        # 1. Update Context
+        context_static = self.query_one("#summary-context", Static)
+        date_str = report.analyzed_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+        context_text = (
+            f"[bold]Contexto de la Consulta:[/bold]\n"
+            f"  • [b]Perfil:[/b] {profile_name or 'Default'}\n"
+            f"  • [b]Motor:[/b] {report.engine.upper()}\n"
+            f"  • [b]Fecha:[/b] {date_str}\n"
+            f"  • [b]Duración Total:[/b] {report.execution_time_ms:.2f} ms"
+        )
+        context_static.update(context_text)
+
+        # 2. Update Plan Summary
+        plan_static = self.query_one("#summary-plan", Static)
+        plan_summary = report.plan_summary or "No se dispone de un resumen del plan."
+        plan_text = f"[bold]Resumen de Operación Principal:[/bold]\n  {markup_escape(plan_summary)}"
+        plan_static.update(plan_text)
+
+        # 3. Update SQL syntax highlighting
+        sql_static = self.query_one("#summary-sql", Static)
+        sql_syntax = Syntax(query, "sql", theme="monokai", line_numbers=True)
+        sql_static.update(sql_syntax)
 
     def set_loading_state(self) -> None:
         """Show loading state."""
-        summary_content = self.query_one("#summary-content", Static)
-        summary_content.update("[yellow]Analyzing query...[/yellow]")
+        self.query_one("#summary-context", Static).update("[yellow]Analizando consulta...[/yellow]")
+        self.query_one("#summary-plan", Static).update("")
+        self.query_one("#summary-sql", Static).update("")
 
-    def set_error(self, message: str = "Error analyzing query") -> None:
+    def set_error(self, message: str = "Error al analizar la consulta") -> None:
         """Show error state.
 
         Args:
             message: Error message to display
         """
-        summary_content = self.query_one("#summary-content", Static)
-        summary_content.update(f"[red]✗ {message}[/red]")
+        self.query_one("#summary-context", Static).update(f"[red]✗ {message}[/red]")
+        self.query_one("#summary-plan", Static).update("")
+        self.query_one("#summary-sql", Static).update("")
 
     def clear(self) -> None:
         """Clear summary content."""
-        summary_content = self.query_one("#summary-content", Static)
-        summary_content.update("")
+        self._current_query = ""
+        self.query_one("#summary-context", Static).update("")
+        self.query_one("#summary-plan", Static).update("")
+        self.query_one("#summary-sql", Static).update("")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events."""
+        if event.button.id == "btn-copy-query":
+            query = getattr(self, "_current_query", None)
+            if query:
+                try:
+                    self.app.copy_to_clipboard(query)
+                    self.app.notify("Consulta copiada al portapapeles")
+                except Exception as e:
+                    self.app.notify(f"No se pudo copiar al portapapeles: {e}", severity="error")
 
     @staticmethod
     def _extract_metadata(query: str, engine: str) -> dict[str, Any]:
@@ -186,9 +225,7 @@ class QuerySummary(Container):
             matches = re.finditer(pattern, query_upper, re.IGNORECASE)
             for match in matches:
                 # Get first non-None group
-                table_name = next(
-                    (g for g in match.groups() if g is not None and g), ""
-                )
+                table_name = next((g for g in match.groups() if g is not None and g), "")
                 if table_name and table_name not in ("SELECT", "WHERE", "ON"):
                     # Find the original case from query
                     original = query[match.start() : match.end()]

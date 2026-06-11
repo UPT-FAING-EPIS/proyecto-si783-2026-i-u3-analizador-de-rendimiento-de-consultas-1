@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 
 from query_analyzer.tui.app import ConnectionScreen
-from query_analyzer.tui.connection_state import ConnectionStatus
+from query_analyzer.tui.connection_state import ConnectionManager, ConnectionStatus
 from query_analyzer.tui.widgets.profile_selector import ProfileAction
 
 
@@ -30,7 +30,7 @@ def _build_screen_with_dependencies(
     monkeypatch.setattr(screen, "query_one", lambda *_args, **_kwargs: status_bar)
 
     fake_app = MagicMock()
-    setattr(screen, "_fake_app", fake_app)
+    screen._fake_app = fake_app
     monkeypatch.setattr(
         ConnectionScreen,
         "app",
@@ -73,3 +73,18 @@ def test_analyze_blocks_navigation_when_profile_error(monkeypatch) -> None:
 
     fake_app.push_screen.assert_not_called()
     status_bar.update.assert_called_once()
+
+
+def test_connection_manager_counts_profile_states() -> None:
+    ConnectionManager.reset()
+    manager = ConnectionManager.get()
+    manager.set_profile_status("postgres", ConnectionStatus.CONNECTED)
+    manager.set_profile_status("mysql", ConnectionStatus.ERROR, "denied")
+    manager.set_profile_status("redis", ConnectionStatus.CONNECTING)
+
+    counts = manager.status_counts()
+
+    assert counts[ConnectionStatus.CONNECTED] == 1
+    assert counts[ConnectionStatus.ERROR] == 1
+    assert counts[ConnectionStatus.CONNECTING] == 1
+    ConnectionManager.reset()

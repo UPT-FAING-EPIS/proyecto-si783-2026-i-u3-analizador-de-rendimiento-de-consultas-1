@@ -22,7 +22,7 @@ from typing import Any
 from ..base import BaseAdapter
 from ..exceptions import ConnectionError as AdapterConnectionError
 from ..exceptions import QueryAnalysisError
-from ..models import ConnectionConfig, QueryAnalysisReport, Recommendation, Warning
+from ..models import ConnectionConfig, QueryAnalysisReport
 from ..registry import AdapterRegistry
 from .cassandra_parser import CassandraExplainParser
 
@@ -217,23 +217,8 @@ class CassandraAdapter(BaseAdapter):
             # Parse trace and analyze
             execution_time_ms = trace.duration / 1000.0  # Convert microseconds to ms
 
-            # Detect ALLOW FILTERING in query text (critical anti-pattern)
+            # Preserve whether ALLOW FILTERING appears in the submitted query.
             has_allow_filtering = "ALLOW FILTERING" in query_upper
-
-            # Parse normalized plan
-            parsed = self._parser.parse(
-                trace_events=trace_events,
-                query=query,
-                keyspace=self._config.database or "",
-                table_name=table_name,
-                schema=self._schema_cache.get(table_name, {}),
-                allow_filtering=has_allow_filtering,
-            )
-
-            # No anti-pattern detection in v2.0.0
-            # Analysis only via tracing metrics
-            warnings: list[Warning] = []
-            recommendations: list[Recommendation] = []
 
             # Build plan tree
             plan_tree = self._parser.build_plan_tree(
@@ -247,7 +232,7 @@ class CassandraAdapter(BaseAdapter):
             if has_allow_filtering:
                 plan_summary += " (with ALLOW FILTERING)"
 
-            # Create report (no score, no anti-patterns)
+            # Create report from trace data.
             report = QueryAnalysisReport(
                 engine="cassandra",
                 query=query,

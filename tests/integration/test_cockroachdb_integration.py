@@ -62,25 +62,16 @@ def crdb_test_tables(crdb_adapter: CockroachDBAdapter) -> Generator[None]:
     """Create test tables in CockroachDB for anti-pattern query analysis."""
     conn = crdb_adapter._connection
 
-    # Drop old tables first for clean state
-    with conn.cursor() as cur:
-        for table in ["order_items", "orders", "customers", "large_table"]:
-            try:
-                cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
-            except Exception:
-                conn.rollback()
-    conn.commit()
-
     with conn.cursor() as cur:
         cur.execute(
-            "CREATE TABLE customers ("
+            "CREATE TABLE IF NOT EXISTS customers ("
             "  id INT PRIMARY KEY, name STRING, email STRING,"
             "  country STRING DEFAULT 'USA', created_at TIMESTAMPTZ DEFAULT now()"
             ")"
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_customers_name ON customers (name)")
         cur.execute(
-            "CREATE TABLE orders ("
+            "CREATE TABLE IF NOT EXISTS orders ("
             "  id INT PRIMARY KEY, customer_id INT,"
             "  order_date TIMESTAMPTZ DEFAULT now(), total DECIMAL(10,2)"
             ")"
@@ -88,20 +79,22 @@ def crdb_test_tables(crdb_adapter: CockroachDBAdapter) -> Generator[None]:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders (customer_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders (order_date)")
         cur.execute(
-            "CREATE TABLE order_items ("
+            "CREATE TABLE IF NOT EXISTS order_items ("
             "  id INT PRIMARY KEY, order_id INT, product_id INT,"
             "  quantity INT, price DECIMAL(10,2)"
             ")"
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items (order_id)")
         cur.execute(
-            "CREATE TABLE large_table ("
+            "CREATE TABLE IF NOT EXISTS large_table ("
             "  id INT PRIMARY KEY, data STRING, created_at TIMESTAMPTZ DEFAULT now()"
             ")"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_large_table_created_at ON large_table (created_at)"
         )
+        for table in ["order_items", "orders", "customers", "large_table"]:
+            cur.execute(f"DELETE FROM {table}")
 
         cur.execute(
             "INSERT INTO customers (id, name, email, country, created_at) "
@@ -131,13 +124,10 @@ def crdb_test_tables(crdb_adapter: CockroachDBAdapter) -> Generator[None]:
 
     conn.commit()
     yield
-    # Cleanup
+    # Keep the schema and clear only test data to avoid asynchronous schema-change races.
     with conn.cursor() as cur:
         for table in ["order_items", "orders", "customers", "large_table"]:
-            try:
-                cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
-            except Exception:
-                conn.rollback()
+            cur.execute(f"DELETE FROM {table}")
     conn.commit()
 
 

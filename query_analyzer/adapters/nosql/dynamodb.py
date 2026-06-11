@@ -10,7 +10,7 @@ Architecture:
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from query_analyzer.adapters.base import BaseAdapter
 from query_analyzer.adapters.models import ConnectionConfig, QueryAnalysisReport

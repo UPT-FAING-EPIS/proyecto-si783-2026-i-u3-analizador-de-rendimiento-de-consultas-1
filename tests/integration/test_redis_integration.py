@@ -83,51 +83,48 @@ class TestRedisAdapterExecuteExplainIntegration:
     """Test execute_explain with real commands."""
 
     def test_execute_explain_keys_command(self, adapter):
-        """Test analysis of KEYS command.
-
-        KEYS * is O(N) and dangerous. Analysis should:
-        - Return low score (penalized)
-        - Include warning about the O(N) operation
-        - Recommend SCAN as the safe alternative
-        """
+        """Test factual analysis of the KEYS command."""
         report = adapter.execute_explain("KEYS *")
 
         assert isinstance(report, QueryAnalysisReport), "Report must be QueryAnalysisReport"
         assert report.engine == "redis", f"Engine should be 'redis', got {report.engine}"
         assert report.query == "KEYS *", f"Query should be 'KEYS *', got {report.query}"
         assert isinstance(report.metrics, dict)
-        assert report.metrics.get("is_dangerous_command") is True
         assert report.metrics.get("complexity") == "O(N)"
-
-        # Verify recommendation signal for SCAN in normalized plan/metrics
         normalized_plan = report.metrics.get("normalized_plan", {})
-        extra_info = " ".join(normalized_plan.get("extra_info", []))
-        assert "SCAN" in extra_info.upper(), f"Expected SCAN hint. Got: {extra_info}"
+        assert normalized_plan.get("command") == "KEYS"
+        assert normalized_plan.get("node_type") == "KEYS_SCAN"
+        assert normalized_plan.get("is_blocking") is True
 
     def test_execute_explain_smembers_command(self, adapter):
         """Test analysis of SMEMBERS command."""
         report = adapter.execute_explain("SMEMBERS myset")
 
         assert isinstance(report, QueryAnalysisReport)
-        assert report.metrics.get("is_dangerous_command") is True
         assert report.metrics.get("complexity") == "O(N)"
+        normalized_plan = report.metrics.get("normalized_plan", {})
+        assert normalized_plan.get("command") == "SMEMBERS"
+        assert normalized_plan.get("node_type") == "SET_ITERATION"
+        assert normalized_plan.get("is_blocking") is False
 
-    def test_execute_explain_safe_get_command(self, adapter):
-        """Test analysis of safe GET command."""
+    def test_execute_explain_get_command(self, adapter):
+        """Test factual analysis of a GET command."""
         report = adapter.execute_explain("GET mykey")
 
         assert isinstance(report, QueryAnalysisReport)
-        assert report.metrics.get("is_dangerous_command") is False
         assert report.metrics.get("complexity") == "O(1)"
+        normalized_plan = report.metrics.get("normalized_plan", {})
+        assert normalized_plan.get("command") == "GET"
+        assert normalized_plan.get("is_blocking") is False
 
     def test_execute_explain_flushdb_command(self, adapter):
-        """Test analysis of dangerous FLUSHDB command."""
+        """Test factual analysis of a FLUSHDB command."""
         report = adapter.execute_explain("FLUSHDB")
 
-        assert report.metrics.get("is_dangerous_command") is True
         normalized_plan = report.metrics.get("normalized_plan", {})
-        extra_info = " ".join(normalized_plan.get("extra_info", []))
-        assert "DESTRUCT" in extra_info.upper() or "DEL" in extra_info.upper()
+        assert normalized_plan.get("command") == "FLUSHDB"
+        assert normalized_plan.get("node_type") == "FLUSH_OPERATION"
+        assert normalized_plan.get("is_blocking") is True
 
 
 class TestRedisAdapterGetSlowQueriesIntegration:
@@ -280,18 +277,18 @@ class TestRedisAdapterEndToEndIntegration:
 
         # 3. Analyze commands
         keys_report = adapter.execute_explain("KEYS *")
-        assert keys_report.metrics.get("is_dangerous_command") is True
+        assert keys_report.metrics.get("complexity") == "O(N)"
 
         get_report = adapter.execute_explain("GET mykey")
-        assert get_report.metrics.get("is_dangerous_command") is False
+        assert get_report.metrics.get("complexity") == "O(1)"
 
         # 4. Get metrics
         metrics = adapter.get_metrics()
         assert "total_commands_processed" in metrics
 
-    def test_dangerous_commands_consistency(self, adapter):
-        """Test that dangerous command detection is consistent."""
-        dangerous_commands = [
+    def test_non_constant_complexity_commands_consistency(self, adapter):
+        """Test that non-constant command complexity is reported consistently."""
+        commands = [
             "KEYS *",
             "SMEMBERS myset",
             "HGETALL myhash",
@@ -300,15 +297,14 @@ class TestRedisAdapterEndToEndIntegration:
             "FLUSHDB",
         ]
 
-        for cmd in dangerous_commands:
+        for cmd in commands:
             report = adapter.execute_explain(cmd)
-            assert report.metrics.get("is_dangerous_command") is True, (
-                f"Command {cmd} should be detected as dangerous"
-            )
+            assert report.metrics.get("complexity") != "O(1)"
+            assert report.metrics["normalized_plan"]["command"] == cmd.split()[0]
 
-    def test_safe_commands_consistency(self, adapter):
-        """Test that safe commands maintain high scores."""
-        safe_commands = [
+    def test_constant_complexity_commands_consistency(self, adapter):
+        """Test that constant-complexity commands are reported consistently."""
+        commands = [
             "GET mykey",
             "SET mykey myvalue",
             "DEL mykey",
@@ -316,11 +312,10 @@ class TestRedisAdapterEndToEndIntegration:
             "LPUSH mylist value",
         ]
 
-        for cmd in safe_commands:
+        for cmd in commands:
             report = adapter.execute_explain(cmd)
-            assert report.metrics.get("is_dangerous_command") is False, (
-                f"Command {cmd} should be detected as safe"
-            )
+            assert report.metrics.get("complexity") == "O(1)"
+            assert report.metrics["normalized_plan"]["command"] == cmd.split()[0]
 
 
 class TestRedisAdapterClusterDetection:
