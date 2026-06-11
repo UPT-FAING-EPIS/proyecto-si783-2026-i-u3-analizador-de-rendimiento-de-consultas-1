@@ -46,17 +46,22 @@ class AIAnalyzer:
     Detecta automáticamente si la IA está configurada.
     """
 
-    def __init__(self) -> None:
-        """Inicializa el analizador con variables de entorno.
+    def __init__(
+        self,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """Inicializa con parámetros explícitos o variables de entorno como fallback.
 
         Variables de entorno:
-        - QA_AI_BASE_URL: URL base del proveedor (requerida)
-        - QA_AI_API_KEY: Token de autenticación (requerida)
+        - QA_AI_BASE_URL: URL base del proveedor (requerida si no se pasa por parámetro)
+        - QA_AI_API_KEY: Token de autenticación (requerida si no se pasa por parámetro)
         - QA_AI_MODEL: Modelo a usar (default: gpt-4o)
         """
-        self.base_url = os.environ.get("QA_AI_BASE_URL", "").strip()
-        self.api_key = os.environ.get("QA_AI_API_KEY", "").strip()
-        self.model = os.environ.get("QA_AI_MODEL", "gpt-4o").strip()
+        self.base_url = (base_url or os.environ.get("QA_AI_BASE_URL", "")).strip()
+        self.api_key = (api_key or os.environ.get("QA_AI_API_KEY", "")).strip()
+        self.model = (model or os.environ.get("QA_AI_MODEL", "gpt-4o")).strip()
 
         # Disponibilidad de IA
         self.available = bool(self.base_url and self.api_key)
@@ -68,6 +73,10 @@ class AIAnalyzer:
             )
         else:
             logger.debug("AI Analyzer disabled (QA_AI_BASE_URL or QA_AI_API_KEY not set)")
+
+    def is_configured(self) -> bool:
+        """Retorna si el analizador de IA está configurado."""
+        return self.available
 
     def _extract_provider(self) -> str:
         """Extrae el nombre del proveedor desde la URL.
