@@ -81,6 +81,7 @@ class AIAnalyzeResponse(BaseModel):
     summary: str = ""
     observations: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
+    suggested_query: str | None = None
     error: str | None = None
 
 

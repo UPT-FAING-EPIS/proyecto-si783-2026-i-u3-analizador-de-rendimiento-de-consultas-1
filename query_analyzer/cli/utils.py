@@ -173,14 +173,16 @@ class OutputFormatter:
         """Format observed engine data for a terminal."""
         width = get_terminal_width()
         header_content = (
-            f"[cyan]Engine:[/cyan] [bold]{report.engine.upper()}[/bold]\n"
-            f"[cyan]Execution Time:[/cyan] {report.execution_time_ms:.2f} ms\n"
-            f"[cyan]Plan:[/cyan] {report.plan_summary or 'Not available'}\n"
-            f"[cyan]Query:[/cyan] {OutputFormatter.truncate_adaptive(report.query, width - 12)}"
+            f"[cyan]Motor:[/cyan] [bold]{report.engine.upper()}[/bold]\n"
+            f"[cyan]Tiempo de ejecucion:[/cyan] {report.execution_time_ms:.2f} ms\n"
+            f"[cyan]Plan:[/cyan] {report.plan_summary or 'No disponible'}\n"
+            f"[cyan]Consulta:[/cyan] {OutputFormatter.truncate_adaptive(report.query, width - 12)}"
         )
         buffer = StringIO()
         render_console = Console(file=buffer, force_terminal=True, width=width)
-        render_console.print(Panel(header_content, title="OBSERVED EXECUTION DATA", expand=True))
+        render_console.print(
+            Panel(header_content, title="DATOS OBSERVADOS DE EJECUCION", expand=True)
+        )
 
         if report.metrics:
             table = Table(show_header=True, header_style="bold")
@@ -192,11 +194,7 @@ class OutputFormatter:
 
         if report.ai_analysis:
             render_console.print(
-                Panel(
-                    report.ai_analysis.summary,
-                    title="AI INTERPRETATION (NOT ENGINE DATA)",
-                    expand=True,
-                )
+                Panel(report.ai_analysis.summary, title="ANALISIS DE IA", expand=True)
             )
 
         return buffer.getvalue().rstrip()
@@ -226,34 +224,40 @@ class OutputFormatter:
             # Header
             query_display = truncate_text(report.query, max_width=100)
 
-            target_console.print("[bold cyan]--- QUERY ANALYSIS REPORT (v2.0.0) ---[/bold cyan]")
-            target_console.print(f"[cyan]Engine:[/cyan] [bold]{report.engine}[/bold]")
             target_console.print(
-                f"[cyan]Execution Time:[/cyan] [bold]{report.execution_time_ms:.2f} ms[/bold]"
+                "[bold cyan]--- REPORTE DE ANALISIS DE CONSULTA (v2.0.0) ---[/bold cyan]"
             )
-            target_console.print(f"[cyan]Query:[/cyan] {query_display}")
+            target_console.print(f"[cyan]Motor:[/cyan] [bold]{report.engine}[/bold]")
+            target_console.print(
+                f"[cyan]Tiempo de ejecucion:[/cyan] [bold]{report.execution_time_ms:.2f} ms[/bold]"
+            )
+            target_console.print(f"[cyan]Consulta:[/cyan] {query_display}")
             if report.plan_summary:
-                target_console.print(f"[cyan]Plan Summary:[/cyan] {report.plan_summary}")
+                target_console.print(f"[cyan]Resumen del plan:[/cyan] {report.plan_summary}")
             target_console.print()
 
             # AI Analysis section (if available)
             if report.ai_analysis:
                 target_console.print()
-                target_console.print("[bold green]AI ANALYSIS[/bold green]")
+                target_console.print("[bold green]ANALISIS DE IA[/bold green]")
 
                 ai = report.ai_analysis
                 if ai.summary:
-                    target_console.print(f"[green]Summary:[/green] {ai.summary}")
+                    target_console.print(f"[green]Resumen:[/green] {ai.summary}")
 
                 if ai.observations:
-                    target_console.print("[green]Observations:[/green]")
+                    target_console.print("[green]Observaciones:[/green]")
                     for obs in ai.observations:
                         target_console.print(f"  • {obs}")
 
                 if ai.recommendations:
-                    target_console.print("[green]AI Recommendations:[/green]")
+                    target_console.print("[green]Recomendaciones de IA:[/green]")
                     for i, rec in enumerate(ai.recommendations, 1):
                         target_console.print(f"  {i}. {rec}")
+
+                if ai.suggested_query:
+                    target_console.print("[green]Consulta sugerida:[/green]")
+                    target_console.print(ai.suggested_query)
 
                 target_console.print()
 
@@ -270,7 +274,7 @@ class OutputFormatter:
 
             target_console.print()
             target_console.print(
-                "[dim]Note: AI insights available if QA_AI_BASE_URL is configured[/dim]"
+                "[dim]Nota: el analisis de IA esta disponible si QA_AI_BASE_URL esta configurada[/dim]"
             )
         elif format == "json":
             import json

@@ -102,23 +102,31 @@ class AnalysisExporter:
             ai = self.report.ai_analysis
 
             if ai.summary:
-                lines.append("## AI Analysis Summary")
+                lines.append("## Resumen del analisis de IA")
                 lines.append("")
                 lines.append(ai.summary)
                 lines.append("")
 
             if ai.observations:
-                lines.append("## Observations")
+                lines.append("## Observaciones")
                 lines.append("")
                 for obs in ai.observations:
                     lines.append(f"- {obs}")
                 lines.append("")
 
             if ai.recommendations:
-                lines.append("## Recommendations")
+                lines.append("## Recomendaciones")
                 lines.append("")
                 for i, rec in enumerate(ai.recommendations, 1):
                     lines.append(f"{i}. {rec}")
+                lines.append("")
+
+            if ai.suggested_query:
+                lines.append("## Consulta sugerida")
+                lines.append("")
+                lines.append("```sql")
+                lines.append(ai.suggested_query)
+                lines.append("```")
                 lines.append("")
 
         return "\n".join(lines)
@@ -145,9 +153,15 @@ class AnalysisExporter:
 
         # AI recommendations as comments
         if self.report.ai_analysis and self.report.ai_analysis.recommendations:
-            lines.append("-- AI Recommendations:")
+            lines.append("-- Recomendaciones de IA:")
             for i, rec in enumerate(self.report.ai_analysis.recommendations, 1):
                 lines.append(f"-- {i}. {rec}")
+            lines.append("")
+
+        if self.report.ai_analysis and self.report.ai_analysis.suggested_query:
+            lines.append("-- Consulta sugerida por IA:")
+            for line in self.report.ai_analysis.suggested_query.splitlines():
+                lines.append(f"-- {line}")
             lines.append("")
 
         # Original query

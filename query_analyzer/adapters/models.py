@@ -291,6 +291,7 @@ class AIAnalysisResult(BaseModel):
         summary: Resumen del EXPLAIN en lenguaje natural
         observations: Observaciones puntuales del plan
         recommendations: Recomendaciones accionables
+        suggested_query: Consulta mejorada sugerida por IA, si aplica
         raw_response: Respuesta completa de la IA (para debugging)
     """
 
@@ -302,6 +303,9 @@ class AIAnalysisResult(BaseModel):
 
     recommendations: list[str] = Field(default_factory=list)
     """Recomendaciones accionables"""
+
+    suggested_query: str | None = None
+    """Consulta mejorada sugerida por IA, si aplica"""
 
     raw_response: str | None = None
     """Respuesta completa de la IA (para debugging)"""

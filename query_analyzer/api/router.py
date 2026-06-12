@@ -102,6 +102,7 @@ def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
             summary=result.summary,
             observations=result.observations,
             recommendations=result.recommendations,
+            suggested_query=result.suggested_query,
         )
     except Exception as e:
         return AIAnalyzeResponse(success=False, error=str(e))

@@ -19,7 +19,7 @@ def _report() -> QueryAnalysisReport:
 def test_rich_output_shows_observed_data() -> None:
     with patch("query_analyzer.cli.utils.get_terminal_width", return_value=90):
         output = OutputFormatter.format_report(_report(), format="rich")
-    assert "OBSERVED EXECUTION DATA" in output
+    assert "DATOS OBSERVADOS DE EJECUCION" in output
     assert "Index Scan on users" in output
     assert "actual_rows" in output
     assert "Score" not in output

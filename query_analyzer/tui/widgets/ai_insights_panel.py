@@ -117,7 +117,7 @@ class AIInsightsPanel(Container):
     def compose(self) -> ComposeResult:
         """Render initial layout with permanent AI warning banner."""
         with Vertical():
-            yield Label("AI Analysis", classes="panel-title")
+            yield Label("Analisis de IA", classes="panel-title")
             yield Static(
                 "AVISO DE IA: La interpretación por Inteligencia Artificial es opcional, generativa y puede contener imprecisiones.",
                 classes="ai-warning-banner",
@@ -145,7 +145,7 @@ class AIInsightsPanel(Container):
         # Estado: IA deshabilitada/no configurada
         if ai_analysis is None:
             insights_content.update(
-                "AI no configurada\n"
+                "IA no configurada\n"
                 "[dim]Configure las variables de entorno QA_AI_BASE_URL y QA_AI_API_KEY para habilitar el análisis de IA.[/dim]"
             )
             return
@@ -190,13 +190,13 @@ class AIInsightsPanel(Container):
 
         # Summary
         if ai_analysis.summary:
-            lines.append("[cyan]Summary:[/cyan]")
+            lines.append("[cyan]Resumen:[/cyan]")
             lines.append(ai_analysis.summary)
             lines.append("")
 
         # Observations
         if ai_analysis.observations:
-            lines.append("[yellow]Observations:[/yellow]")
+            lines.append("[yellow]Observaciones:[/yellow]")
             for obs in ai_analysis.observations:
                 severity = AIInsightsPanel._extract_severity(obs)
                 icon = OBSERVATION_ICONS.get(severity, "•")
@@ -205,13 +205,18 @@ class AIInsightsPanel(Container):
 
         # Recommendations
         if ai_analysis.recommendations:
-            lines.append("[green]Recommendations:[/green]")
+            lines.append("[green]Recomendaciones:[/green]")
             for i, rec in enumerate(ai_analysis.recommendations, 1):
                 lines.append(f"{i}. {rec}")
             lines.append("")
 
+        if ai_analysis.suggested_query:
+            lines.append("[green]Consulta sugerida:[/green]")
+            lines.append(f"```sql\n{ai_analysis.suggested_query}\n```")
+            lines.append("")
+
         if not lines:
-            lines.append("[dim]No AI insights available[/dim]")
+            lines.append("[dim]No hay analisis de IA disponible[/dim]")
 
         return lines
 
@@ -226,11 +231,11 @@ class AIInsightsPanel(Container):
             Severity level (CRITICAL, HIGH, MEDIUM, LOW)
         """
         text_upper = text.upper()
-        if "CRITICAL" in text_upper:
+        if "CRITICAL" in text_upper or "CRITICO" in text_upper or "CRÍTICO" in text_upper:
             return "CRITICAL"
-        elif "HIGH" in text_upper or "ERROR" in text_upper:
+        elif "HIGH" in text_upper or "ALTO" in text_upper or "ERROR" in text_upper:
             return "HIGH"
-        elif "MEDIUM" in text_upper or "WARNING" in text_upper:
+        elif "MEDIUM" in text_upper or "MEDIO" in text_upper or "WARNING" in text_upper:
             return "MEDIUM"
         else:
             return "LOW"
@@ -283,7 +288,7 @@ class AIObservationsPanel(Container):
 
     def compose(self) -> ComposeResult:
         """Render initial layout."""
-        yield Label("AI Observations", classes="section-title")
+        yield Label("Observaciones de IA", classes="section-title")
         yield ListView(id="observations-list")
 
     def render_observations(self, observations: list[str]) -> None:
@@ -296,7 +301,7 @@ class AIObservationsPanel(Container):
         list_view.clear()
 
         if not observations:
-            list_view.append(ListItem(Label("[dim]No observations[/dim]")))
+            list_view.append(ListItem(Label("[dim]Sin observaciones[/dim]")))
             return
         for obs in observations:
             severity = AIInsightsPanel._extract_severity(obs)
@@ -307,13 +312,13 @@ class AIObservationsPanel(Container):
         """Show loading state."""
         list_view = self.query_one("#observations-list", ListView)
         list_view.clear()
-        list_view.append(ListItem(Label("[yellow]Analyzing...[/yellow]")))
+        list_view.append(ListItem(Label("[yellow]Analizando...[/yellow]")))
 
     def set_error(self) -> None:
         """Show error state."""
         list_view = self.query_one("#observations-list", ListView)
         list_view.clear()
-        list_view.append(ListItem(Label("[red]Error analyzing[/red]")))
+        list_view.append(ListItem(Label("[red]Error al analizar[/red]")))
 
 
 class AIRecommendationsPanel(Container):
@@ -374,7 +379,7 @@ class AIRecommendationsPanel(Container):
 
     def compose(self) -> ComposeResult:
         """Render initial layout."""
-        yield Label("AI Recommendations", classes="section-title")
+        yield Label("Recomendaciones de IA", classes="section-title")
         yield ListView(id="recommendations-list")
 
     def render_recommendations(self, recommendations: list[str]) -> None:
@@ -387,7 +392,7 @@ class AIRecommendationsPanel(Container):
         list_view.clear()
 
         if not recommendations:
-            list_view.append(ListItem(Label("[dim]No recommendations[/dim]")))
+            list_view.append(ListItem(Label("[dim]Sin recomendaciones[/dim]")))
             return
 
         for idx, rec in enumerate(recommendations, start=1):
@@ -424,10 +429,10 @@ class AIRecommendationsPanel(Container):
         """Show loading state."""
         list_view = self.query_one("#recommendations-list", ListView)
         list_view.clear()
-        list_view.append(ListItem(Label("[yellow]Generating recommendations...[/yellow]")))
+        list_view.append(ListItem(Label("[yellow]Generando recomendaciones...[/yellow]")))
 
     def set_error(self) -> None:
         """Show error state."""
         list_view = self.query_one("#recommendations-list", ListView)
         list_view.clear()
-        list_view.append(ListItem(Label("[red]Error generating recommendations[/red]")))
+        list_view.append(ListItem(Label("[red]Error al generar recomendaciones[/red]")))

@@ -172,7 +172,7 @@ def test_ai_insights_panel_disabled_state(monkeypatch) -> None:
     panel.render_ai_analysis(None, None)
 
     content_mock.update.assert_called_once()
-    assert "AI no configurada" in content_mock.update.call_args[0][0]
+    assert "IA no configurada" in content_mock.update.call_args[0][0]
 
 
 def test_ai_insights_panel_failed_state(monkeypatch) -> None:

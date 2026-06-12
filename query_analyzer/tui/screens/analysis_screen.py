@@ -468,6 +468,7 @@ class AnalysisScreen(Screen[None]):
                             summary=ai_result.summary,
                             observations=ai_result.observations,
                             recommendations=ai_result.recommendations,
+                            suggested_query=ai_result.suggested_query,
                             raw_response=ai_result.raw_response,
                         )
             except Exception as e:

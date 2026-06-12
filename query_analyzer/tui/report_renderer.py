@@ -90,15 +90,19 @@ class ReportRenderer:
             ai = report.ai_analysis
             ai_lines = [ai.summary]
             if ai.observations:
-                ai_lines.extend(["", "Observations:", *[f"- {item}" for item in ai.observations]])
+                ai_lines.extend(["", "Observaciones:", *[f"- {item}" for item in ai.observations]])
             if ai.recommendations:
-                ai_lines.extend(["", "Suggestions:", *[f"- {item}" for item in ai.recommendations]])
+                ai_lines.extend(
+                    ["", "Recomendaciones:", *[f"- {item}" for item in ai.recommendations]]
+                )
+            if ai.suggested_query:
+                ai_lines.extend(["", "Consulta sugerida:", ai.suggested_query])
             components.extend(
                 [
                     "",
                     Panel(
                         "\n".join(ai_lines),
-                        title="AI interpretation (not engine data)",
+                        title="Analisis de IA",
                         expand=False,
                     ),
                 ]
