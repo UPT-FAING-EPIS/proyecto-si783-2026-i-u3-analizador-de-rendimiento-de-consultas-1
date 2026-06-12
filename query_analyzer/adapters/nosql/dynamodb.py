@@ -134,7 +134,7 @@ class DynamoDBAdapter(BaseAdapter):
             QueryAnalysisError: If analysis fails or not connected
 
         Note:
-            v2.0.0: Retorna EXPLAIN real, sin score ni anti-patrones.
+            v2.1.0: Retorna datos reales sin asignar una valoración global.
             IA analysis se agrega en CLI si QA_AI_BASE_URL configurada.
         """
         import time

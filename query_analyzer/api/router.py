@@ -1,5 +1,6 @@
 """Endpoints de la API FastAPI para el analizador de consultas."""
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter
@@ -7,6 +8,7 @@ from fastapi import APIRouter
 from query_analyzer.adapters import AdapterRegistry
 from query_analyzer.adapters.models import ConnectionConfig
 from query_analyzer.core import AIAnalyzer
+from query_analyzer.core.connection_diagnostics import ConnectionDiagnosticsService
 
 from .schemas import (
     AIAnalyzeRequest,
@@ -21,6 +23,7 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/analyzer", tags=["Query Analyzer"])
+logger = logging.getLogger(__name__)
 
 
 def _build_config(conn: ConnectionRequest) -> ConnectionConfig:
@@ -36,10 +39,26 @@ def _build_config(conn: ConnectionRequest) -> ConnectionConfig:
         host=conn.host,
         port=conn.port,
         username=conn.username,
-        password=conn.password,
+        password=conn.password.get_secret_value() if conn.password else None,
         database=conn.database,
         extra=extra,
     )
+
+
+def _log_api_error(
+    operation: str,
+    error: Exception,
+    config: ConnectionConfig | None = None,
+    secrets: tuple[str, ...] = (),
+) -> None:
+    """Log technical API errors without exposing configured secrets."""
+    detail = str(error)
+    if config is not None:
+        detail = ConnectionDiagnosticsService.sanitize_secrets(detail, config)
+    for secret in secrets:
+        if secret:
+            detail = detail.replace(secret, "********")
+    logger.error("API operation %s failed: %s", operation, detail)
 
 
 @router.get("/engines")
@@ -51,6 +70,7 @@ def list_engines() -> dict[str, list[str]]:
 @router.post("/explain", response_model=AnalyzeResponse)
 def analyze_query(req: AnalyzeRequest) -> AnalyzeResponse:
     """Ejecuta EXPLAIN en una consulta y retorna el análisis."""
+    config: ConnectionConfig | None = None
     try:
         config = _build_config(req.connection)
         adapter = AdapterRegistry.create(req.connection.engine, config)
@@ -70,12 +90,13 @@ def analyze_query(req: AnalyzeRequest) -> AnalyzeResponse:
             raw_plan=report.raw_plan,
             metrics=report.metrics,
         )
-    except Exception as e:
+    except Exception as error:
+        _log_api_error("explain", error, config)
         return AnalyzeResponse(
             success=False,
             engine=req.connection.engine,
             query=req.query,
-            error=str(e),
+            error="No se pudo analizar la consulta con la conexión proporcionada.",
         )
 
 
@@ -85,7 +106,7 @@ def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
     try:
         analyzer = AIAnalyzer(
             base_url=req.ai_config.base_url,
-            api_key=req.ai_config.api_key,
+            api_key=req.ai_config.api_key.get_secret_value(),
             model=req.ai_config.model,
         )
 
@@ -104,13 +125,15 @@ def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
             recommendations=result.recommendations,
             suggested_query=result.suggested_query,
         )
-    except Exception as e:
-        return AIAnalyzeResponse(success=False, error=str(e))
+    except Exception as error:
+        _log_api_error("ai", error, secrets=(req.ai_config.api_key.get_secret_value(),))
+        return AIAnalyzeResponse(success=False, error="No se pudo completar el análisis con IA.")
 
 
 @router.post("/metrics", response_model=MetricsResponse)
 def get_metrics(req: MetricsRequest) -> MetricsResponse:
     """Obtiene métricas del motor de BD."""
+    config: ConnectionConfig | None = None
     try:
         config = _build_config(req.connection)
         adapter = AdapterRegistry.create(req.connection.engine, config)
@@ -119,13 +142,18 @@ def get_metrics(req: MetricsRequest) -> MetricsResponse:
             metrics = adapter.get_metrics()
 
         return MetricsResponse(success=True, metrics=metrics)
-    except Exception as e:
-        return MetricsResponse(success=False, error=str(e))
+    except Exception as error:
+        _log_api_error("metrics", error, config)
+        return MetricsResponse(
+            success=False,
+            error="No se pudieron obtener las métricas con la conexión proporcionada.",
+        )
 
 
 @router.post("/slow-queries")
 def get_slow_queries(req: SlowQueriesRequest) -> dict[str, Any]:
     """Obtiene las consultas lentas del motor."""
+    config: ConnectionConfig | None = None
     try:
         config = _build_config(req.connection)
         adapter = AdapterRegistry.create(req.connection.engine, config)
@@ -134,13 +162,18 @@ def get_slow_queries(req: SlowQueriesRequest) -> dict[str, Any]:
             queries = adapter.get_slow_queries(req.threshold_ms)
 
         return {"success": True, "slow_queries": queries}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    except Exception as error:
+        _log_api_error("slow-queries", error, config)
+        return {
+            "success": False,
+            "error": "No se pudieron obtener las consultas lentas con la conexión proporcionada.",
+        }
 
 
 @router.post("/engine-info", response_model=EngineInfoResponse)
 def get_engine_info(req: MetricsRequest) -> EngineInfoResponse:
     """Obtiene información del motor (versión, config, etc.)."""
+    config: ConnectionConfig | None = None
     try:
         config = _build_config(req.connection)
         adapter = AdapterRegistry.create(req.connection.engine, config)
@@ -149,5 +182,9 @@ def get_engine_info(req: MetricsRequest) -> EngineInfoResponse:
             info = adapter.get_engine_info()
 
         return EngineInfoResponse(success=True, info=info)
-    except Exception as e:
-        return EngineInfoResponse(success=False, error=str(e))
+    except Exception as error:
+        _log_api_error("engine-info", error, config)
+        return EngineInfoResponse(
+            success=False,
+            error="No se pudo obtener información del motor con la conexión proporcionada.",
+        )

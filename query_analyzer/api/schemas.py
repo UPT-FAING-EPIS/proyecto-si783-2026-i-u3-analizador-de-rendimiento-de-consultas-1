@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from query_analyzer.adapters.models import AIAnalysisResult, PlanNode
 
@@ -15,7 +15,7 @@ class ConnectionRequest(BaseModel):
     host: str | None = Field(default=None, description="Host o IP del servidor")
     port: int | None = Field(default=None, description="Puerto del servidor")
     username: str | None = Field(default=None, description="Nombre de usuario")
-    password: str | None = Field(default=None, description="Contraseña")
+    password: SecretStr | None = Field(default=None, description="Contraseña")
     database: str = Field(default="", description="Nombre de la base de datos o ruta de archivo")
     auth_database: str | None = Field(default=None, description="Base de datos de autenticación")
     ssl: bool = Field(default=False, description="Uso de SSL")
@@ -32,7 +32,7 @@ class AIConfigRequest(BaseModel):
     """Configuración de IA para análisis avanzado."""
 
     base_url: str = Field(..., description="URL del proveedor de IA")
-    api_key: str = Field(..., description="API key")
+    api_key: SecretStr = Field(..., description="API key")
     model: str = Field(default="gpt-4o", description="Modelo a usar")
 
 

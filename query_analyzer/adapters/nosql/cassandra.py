@@ -178,7 +178,7 @@ class CassandraAdapter(BaseAdapter):
             query: CQL SELECT query (e.g., "SELECT * FROM users WHERE id=1")
 
         Returns:
-            QueryAnalysisReport with score, warnings, recommendations, plan
+            QueryAnalysisReport with the observed trace, metrics, and plan
 
         Raises:
             QueryAnalysisError: If query execution or analysis fails

@@ -176,14 +176,14 @@ class InfluxDBAdapter(BaseAdapter):
         2. EXECUTION      → Run query via InfluxDB API
         3. PARSING        → Parse Flux structure using regex patterns
         4. NORMALIZATION  → Convert to engine-agnostic plan format
-        5. ANTI-PATTERN   → Detect patterns and calculate score (0-100)
-        6. REPORTING      → Build QueryAnalysisReport with recommendations
+        5. EXTRACTION     → Collect the observable query and response metrics
+        6. REPORTING      → Build the factual QueryAnalysisReport
 
         Args:
             query: Flux query to analyze (not DDL statements)
 
         Returns:
-            QueryAnalysisReport with score, warnings, and recommendations
+            QueryAnalysisReport with the observed metrics and normalized data
 
         Raises:
             QueryAnalysisError: If query analysis fails or connection not active

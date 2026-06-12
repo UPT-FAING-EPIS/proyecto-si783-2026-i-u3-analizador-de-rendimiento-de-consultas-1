@@ -121,7 +121,7 @@ def analyze_query(query: str, config: ConnectionConfig) -> QueryAnalysisReport:
         config: Database connection config
 
     Returns:
-        Report with metrics and recommendations
+        Report with factual plan data and metrics
 
     Raises:
         QueryAnalysisError: If query execution fails
@@ -146,7 +146,8 @@ Create instances: `adapter = AdapterRegistry.create("postgresql", config)`
 - `adapters/registry.py` — factory pattern
 - `adapters/sql/*` — PostgreSQL, MySQL, SQLite, CockroachDB, YugabyteDB
 - `config/*` — connection profiles, encryption
-- `core/*` — anti-pattern detection, recommendations (engine-agnostic)
+- `core/*` — connection diagnostics and optional AI analysis
+- `api/*` — FastAPI application and REST schemas
 - `cli/*` — CLI entry point (typer-based)
 
 ---

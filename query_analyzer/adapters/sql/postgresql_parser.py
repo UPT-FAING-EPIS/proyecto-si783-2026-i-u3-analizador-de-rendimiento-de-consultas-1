@@ -7,14 +7,13 @@ class PostgreSQLExplainParser:
     """Parseador especializado para salidas EXPLAIN de PostgreSQL.
 
     Analiza planes de ejecución en formato JSON (EXPLAIN ANALYZE, BUFFERS, FORMAT JSON)
-    para extraer métricas de rendimiento y detectar anti-patrones. Recorre recursivamente
-    el árbol de planes, calcula costos estimados vs. actuales, identifica operaciones
-    costosas (sequential scans, index operations, joins), y genera una puntuación de
-    optimización (0-100) basada en la estructura del plan.
+    para extraer métricas y operaciones observables. Recorre recursivamente el árbol,
+    conserva costos estimados y valores actuales, e identifica operaciones como
+    sequential scans, accesos por índice y joins sin asignar una valoración global.
 
     Atributos:
-        seq_scan_threshold: Número de filas en tabla para considerar Seq Scan como
-            posible anti-patrón (default: 10000).
+        seq_scan_threshold: Número de filas usado para destacar un Seq Scan en los
+            datos auxiliares del parser (default: 10000).
     """
 
     def __init__(self, seq_scan_threshold: int = 10000) -> None:
