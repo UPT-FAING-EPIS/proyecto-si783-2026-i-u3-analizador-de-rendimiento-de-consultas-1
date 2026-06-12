@@ -282,7 +282,7 @@ class PlanNode(BaseModel):
 
 
 class AIAnalysisResult(BaseModel):
-    """Resultado del análisis con IA - v2.0.0.
+    """Resultado del análisis con IA - v2.1.0.
 
     Contiene insights en lenguaje natural sobre el plan de ejecución.
     Solo poblado si el usuario configura QA_AI_BASE_URL y QA_AI_API_KEY.
@@ -318,7 +318,7 @@ class AIAnalysisResult(BaseModel):
 
 
 class QueryAnalysisReport(BaseModel):
-    """Reporte de análisis de consulta - Modelo v2.0.0.
+    """Reporte de análisis de consulta - Modelo v2.1.0.
 
     Enfoque en datos reales del EXPLAIN o equivalente del motor.
     La interpretación en lenguaje natural vive únicamente en ``ai_analysis``

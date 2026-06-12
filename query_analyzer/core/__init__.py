@@ -1,4 +1,4 @@
-"""Core module - Query Analysis Engine (v2.0.0).
+"""Core module - Query Analysis Engine (v2.1.0).
 
 The core exposes optional AI interpretation. Engine observations are produced
 by adapters and kept separate from generated language.

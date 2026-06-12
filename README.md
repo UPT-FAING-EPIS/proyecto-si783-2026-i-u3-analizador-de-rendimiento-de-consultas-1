@@ -105,7 +105,7 @@ qa --help
 PowerShell (ejecucion directa):
 
 ```powershell
-.\qa-0.1.0\bin\qa.exe --help
+.\qa-2.1.0\bin\qa.exe --help
 ```
 
 ### Opcion C: Ejecutar desde codigo fuente
@@ -148,7 +148,33 @@ Si lo ejecutas desde fuente:
 uv run query_analyzer --help
 ```
 
-## AI Integration (v2.0.0+)
+## API REST
+
+La versión `2.1.0` incluye una API FastAPI para exponer los mismos adaptadores y
+reportes factuales usados por la CLI y la TUI.
+
+```bash
+uv sync
+uv run qa-api
+```
+
+El servidor escucha por defecto en `http://127.0.0.1:8001`.
+
+- Swagger UI: `http://127.0.0.1:8001/docs`
+- OpenAPI: `http://127.0.0.1:8001/openapi.json`
+- Base de endpoints: `/api/v1/analyzer`
+
+Ejemplo con SQLite:
+
+```bash
+curl -X POST http://127.0.0.1:8001/api/v1/analyzer/explain \
+  -H "Content-Type: application/json" \
+  -d '{"connection":{"engine":"sqlite","database":":memory:"},"query":"SELECT 1"}'
+```
+
+Consulta [docs/API.md](docs/API.md) para los contratos y endpoints disponibles.
+
+## AI Integration (v2.1.0+)
 
 Query Analyzer now supports **optional AI-powered analysis** via pluggable LLM providers.
 
@@ -162,8 +188,6 @@ export QA_AI_BASE_URL="https://api.openai.com/v1"     # LLM provider URL
 export QA_AI_API_KEY="sk-..."                         # API key
 export QA_AI_MODEL="gpt-4o-mini"                      # Model identifier
 
-# Optional: Timeout in seconds (default: 30)
-export QA_AI_TIMEOUT_SECONDS="30"
 ```
 
 ### Supported LLM Providers
@@ -182,10 +206,7 @@ export QA_AI_BASE_URL="https://api.openai.com/v1"
 export QA_AI_API_KEY="sk-proj-..."
 export QA_AI_MODEL="gpt-4o-mini"
 
-uv run query_analyzer analyze \
-  --engine postgresql \
-  --host localhost \
-  < query.sql
+qa analyze "SELECT * FROM users" --profile local-postgres
 ```
 
 Output includes:
@@ -207,7 +228,7 @@ export QA_AI_BASE_URL="http://localhost:11434/v1"
 export QA_AI_API_KEY="ollama"
 export QA_AI_MODEL="mistral"
 
-uv run query_analyzer analyze --engine sqlite < query.sql
+qa analyze "SELECT 1" --profile local-sqlite
 ```
 
 ### What Happens If AI Is Not Configured?
@@ -222,6 +243,7 @@ The tool gracefully falls back to raw EXPLAIN analysis:
 
 ```python
 from query_analyzer.adapters import AdapterRegistry
+from query_analyzer.adapters.models import ConnectionConfig
 from query_analyzer.core import AIAnalyzer
 
 # Execute EXPLAIN
@@ -233,15 +255,21 @@ config = ConnectionConfig(
     password="pass"
 )
 adapter = AdapterRegistry.create("postgresql", config)
-report = adapter.execute_explain("SELECT * FROM users")
+with adapter:
+    report = adapter.execute_explain("SELECT * FROM users")
 
 # Get AI insights (if configured)
 analyzer = AIAnalyzer()
 if analyzer.is_configured():
-    ai_result = analyzer.analyze(report)
-    print(f"Summary: {ai_result.summary}")
-    print(f"Observations: {ai_result.observations}")
-    print(f"Recommendations: {ai_result.recommendations}")
+    ai_result = analyzer.analyze(
+        plan_json=report.raw_plan or report.plan_summary,
+        query=report.query,
+        engine=report.engine,
+    )
+    if ai_result:
+        print(f"Summary: {ai_result.summary}")
+        print(f"Observations: {ai_result.observations}")
+        print(f"Recommendations: {ai_result.recommendations}")
 else:
     print("AI not configured")
 ```

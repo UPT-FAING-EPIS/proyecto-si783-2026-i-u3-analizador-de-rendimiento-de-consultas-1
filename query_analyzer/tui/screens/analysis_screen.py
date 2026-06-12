@@ -1,4 +1,4 @@
-"""Interactive analysis screen for query execution and visualization - v2.0.0."""
+"""Interactive analysis screen for query execution and visualization - v2.1.0."""
 
 from __future__ import annotations
 
@@ -204,7 +204,7 @@ class AnalysisScreen(Screen[None]):
         context.update(f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]")
 
     def compose(self) -> ComposeResult:
-        """Compose screen layout - v2.0.0 with tabs."""
+        """Compose screen layout - v2.1.0 with tabs."""
         context_text = f"[ Perfil: {self._profile_name} | Motor: {self._engine.upper()} ]"
         with Vertical(id="analysis-root"):
             yield Static(context_text, id="context-label")

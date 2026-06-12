@@ -210,7 +210,7 @@ class OutputFormatter:
         verbose: bool = False,
         console_instance: Console | None = None,
     ) -> None:
-        """Print formatted report (v2.0.0 - no score, AI-ready).
+        """Print formatted report (v2.1.0 - factual data, AI-ready).
 
         Args:
             report: QueryAnalysisReport to print
@@ -226,7 +226,7 @@ class OutputFormatter:
             # Header
             query_display = truncate_text(report.query, max_width=100)
 
-            target_console.print("[bold cyan]--- QUERY ANALYSIS REPORT (v2.0.0) ---[/bold cyan]")
+            target_console.print("[bold cyan]--- QUERY ANALYSIS REPORT (v2.1.0) ---[/bold cyan]")
             target_console.print(f"[cyan]Engine:[/cyan] [bold]{report.engine}[/bold]")
             target_console.print(
                 f"[cyan]Execution Time:[/cyan] [bold]{report.execution_time_ms:.2f} ms[/bold]"

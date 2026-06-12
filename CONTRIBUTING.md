@@ -107,7 +107,8 @@ The project uses an adapter pattern through `AdapterRegistry`.
 - SQL adapters: `query_analyzer/adapters/sql/`
 - NoSQL adapters: `query_analyzer/adapters/nosql/`
 - Config models and handling: `query_analyzer/config/`
-- Engine-agnostic analysis/recommendations: `query_analyzer/core/`
+- Connection diagnostics and optional AI analysis: `query_analyzer/core/`
+- REST API: `query_analyzer/api/`
 
 ## Contribution workflow
 
@@ -138,8 +139,8 @@ Releases are automated by pushing tags that start with `v` and are handled by:
 Example:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v2.1.0
+git push origin v2.1.0
 ```
 
 The workflow builds platform binaries and publishes package managers via JReleaser.

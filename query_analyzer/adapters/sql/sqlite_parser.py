@@ -13,9 +13,8 @@ class SQLiteExplainParser:
 
     Analiza planes de ejecución en formato texto (EXPLAIN QUERY PLAN) con
     columnas separadas por tabulaciones: id, parent, notused, detail.
-    Identifica operaciones de acceso a datos (full scans vs. indexed searches),
-    detecta anti-patrones como scans innecesarios, y calcula una puntuación
-    de optimización (0-100).
+    Identifica operaciones de acceso a datos (full scans vs. indexed searches)
+    y conserva sus detalles para construir un reporte factual.
 
     Ejemplo de entrada:
         id  parent  notused  detail
