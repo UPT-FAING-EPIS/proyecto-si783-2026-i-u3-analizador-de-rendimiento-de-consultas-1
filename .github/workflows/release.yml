@@ -51,7 +51,12 @@ jobs:
         run: uv sync
 
       - name: Build single-file executable
-        run: uv run --with pyinstaller pyinstaller --onefile --name qa query_analyzer/__main__.py
+        run: >
+          uv run --with pyinstaller pyinstaller
+          --onefile
+          --name qa
+          --collect-submodules textual.widgets
+          query_analyzer/__main__.py
 
       - name: Package executable (Linux/macOS)
         if: runner.os == 'Linux'
