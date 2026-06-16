@@ -205,6 +205,7 @@ jobs:
       - name: Build VSIX
         working-directory: integrations/vscode-query-analyzer
         run: |
+          mkdir -p ../../dist
           npm ci
           npm test
           npx @vscode/vsce package \
