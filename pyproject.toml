@@ -192,7 +192,8 @@ exclude_also = [
 ]
 
 [tool.mutmut]
-source_paths = [
+source_paths = ["query_analyzer"]
+only_mutate = [
     "query_analyzer/adapters/registry.py",
     "query_analyzer/adapters/serializer.py",
     "query_analyzer/config/models.py",

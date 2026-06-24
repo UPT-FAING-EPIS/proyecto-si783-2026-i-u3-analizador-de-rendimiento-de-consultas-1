@@ -229,18 +229,17 @@ class TestSQLiteIntegrationExplain:
         """Analyze anti-pattern queries and validate scoring/warnings."""
         query = anti_pattern_query["query"]
 
-        try:
-            report = sqlite_adapter.execute_explain(query)
+        if anti_pattern_query["name"] == "seq_scan_large_table":
+            query = "SELECT * FROM large_table WHERE created_at > datetime('now', '-1 day')"
 
-            assert report.engine == "sqlite"
-            assert report.query == query
-            assert report.execution_time_ms >= 0
-            assert isinstance(report.plan_summary, str)
-            assert report.raw_plan is not None
-            assert isinstance(report.metrics, dict)
+        report = sqlite_adapter.execute_explain(query)
 
-        except Exception as e:
-            pytest.skip(f"Anti-pattern analysis failed for {anti_pattern_query['name']}: {e}")
+        assert report.engine == "sqlite"
+        assert report.query == query
+        assert report.execution_time_ms >= 0
+        assert isinstance(report.plan_summary, str)
+        assert report.raw_plan is not None
+        assert isinstance(report.metrics, dict)
 
     def test_explain_table_scan_detection(self, sqlite_adapter) -> None:
         """EXPLAIN QUERY PLAN detects table scans."""
