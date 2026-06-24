@@ -18,7 +18,10 @@ dependencies = [
     "rich>=14.3.3",
     "textual>=8.2.2",
     "typer>=0.24.1",
-    "cryptography>=42.0.0",
+    "cryptography>=48.0.1",
+    "defusedxml>=0.7.1",
+    "idna>=3.15",
+    "pydantic-settings>=2.14.2",
     "redis>=5.0",
     "neo4j>=5.0.0",
     "influxdb-client>=1.36.0",
@@ -28,6 +31,8 @@ dependencies = [
     "uvicorn[standard]>=0.29.0",
     "mcp>=1.27,<2",
     "requests>=2.32.0",
+    "starlette>=1.3.1",
+    "urllib3>=2.7.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -40,10 +45,15 @@ qa-api = "query_analyzer.api.app:main"
 
 [dependency-groups]
 dev = [
+    "bandit>=1.8.6",
     "httpx>=0.28.1",
+    "markdown>=3.8.2",
     "mypy>=1.20.0",
+    "mutmut>=3.3.1",
+    "pip-audit>=2.9.0",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
+    "pytest-bdd>=8.1.0",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.14.0",
     "pytest-timeout>=2.4.0",
@@ -52,11 +62,12 @@ dev = [
     "types-psycopg2>=2.9.21.19.1",
     "types-PyMySQL>=1.1.0.20240815",
     "types-PyYAML>=6.0.12.20240917",
+    "types-defusedxml>=0.7.0",
     "types-redis>=4.6.0",
     "types-requests>=2.32.4.20260107",
     "moto[dynamodb]>=4.2.0",
     # Cassandra driver (optional - Windows build issues on Python 3.14)
-    # For local Cassandra integration testing: pip install cassandra-driver==3.29.3
+    # For local Cassandra integration testing: uv add cassandra-driver==3.29.3
 ]
 
 [tool.ruff]
@@ -134,3 +145,59 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "textual.*"
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "bdd: executable acceptance scenarios written in Given/When/Then form",
+    "contract: cross-engine adapter contract tests",
+    "interface: CLI, TUI, API, MCP, and extension-facing tests",
+    "integration: tests that use a real or locally emulated database service",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["query_analyzer"]
+omit = [
+    "query_analyzer/__main__.py",
+    "query_analyzer/adapters/elasticsearch.py",
+    "query_analyzer/adapters/graph/neo4j.py",
+    "query_analyzer/adapters/graph/neo4j_metrics.py",
+    "query_analyzer/adapters/nosql/cassandra.py",
+    "query_analyzer/adapters/nosql/dynamodb.py",
+    "query_analyzer/adapters/nosql/mongodb.py",
+    "query_analyzer/adapters/redis.py",
+    "query_analyzer/adapters/sql/cockroachdb.py",
+    "query_analyzer/adapters/sql/mysql.py",
+    "query_analyzer/adapters/sql/postgresql.py",
+    "query_analyzer/adapters/sql/sqlite.py",
+    "query_analyzer/adapters/sql/sqlserver.py",
+    "query_analyzer/adapters/sql/yugabytedb.py",
+    "query_analyzer/adapters/timeseries/influxdb.py",
+    "query_analyzer/cli/commands/analyze.py",
+    "query_analyzer/cli/questionary_prompts.py",
+    "query_analyzer/tui/*",
+    "query_analyzer/tui/**/*",
+]
+
+[tool.coverage.report]
+fail_under = 65
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.mutmut]
+source_paths = [
+    "query_analyzer/adapters/registry.py",
+    "query_analyzer/adapters/serializer.py",
+    "query_analyzer/config/models.py",
+]
+pytest_add_cli_args_test_selection = [
+    "tests/unit/test_adapter_registry.py",
+    "tests/unit/test_models_v2_phase1.py",
+]

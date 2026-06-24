@@ -1,0 +1,374 @@
+name: Quality Reports and Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  security-events: write
+
+concurrency:
+  group: quality-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Lint, format and type check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy query_analyzer
+
+      - name: Unit, contract, BDD and coverage gate
+        run: |
+          uv run pytest tests/unit/ tests/contract/ tests/bdd/ \
+            --cov=query_analyzer \
+            --cov-report=term-missing \
+            --cov-report=html:build/reports/coverage \
+            --cov-report=xml:build/reports/coverage.xml \
+            --cov-fail-under=65 \
+            --junitxml=build/test-results/python-quality.xml
+
+      - name: Python interface report
+        run: |
+          uv run pytest \
+            tests/unit/test_api_app.py \
+            tests/unit/test_api_router.py \
+            tests/unit/test_cli_api.py \
+            tests/unit/test_cli_profile.py \
+            tests/unit/test_mcp_server.py \
+            tests/unit/test_tui_analysis_screen_bindings.py \
+            tests/unit/test_tui_connection_screen.py \
+            --junitxml=build/test-results/interface-python.xml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-quality-reports
+          path: |
+            build/reports/coverage
+            build/reports/coverage.xml
+            build/test-results
+          if-no-files-found: error
+
+  database-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Start supported local services
+        run: |
+          docker compose -f docker/compose.yml up -d \
+            postgres mysql mongodb redis influxdb neo4j cockroachdb yugabytedb elasticsearch
+          make wait-healthy || sleep 45
+
+      - name: Seed databases
+        run: make seed
+
+      - name: Run integrations including emulated DynamoDB
+        run: |
+          uv run pytest tests/integration/ \
+            --ignore=tests/integration/test_mssql_integration.py \
+            -v --tb=short \
+            --junitxml=build/test-results/integration.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: database-integration-reports
+          path: |
+            build/test-results/integration.xml
+            logs
+          if-no-files-found: warn
+
+      - if: always()
+        run: docker compose -f docker/compose.yml down -v
+
+  mssql-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - run: uv sync
+      - run: docker compose -f docker/compose.yml up -d mssql
+      - run: sleep 45
+      - run: uv run pytest tests/integration/test_mssql_integration.py -v --junitxml=build/test-results/mssql.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mssql-integration-report
+          path: build/test-results/mssql.xml
+          if-no-files-found: warn
+
+      - if: always()
+        run: docker compose -f docker/compose.yml down -v
+
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - run: uv sync
+      - run: uv run mutmut run
+      - run: uv run mutmut results | tee mutation-results.txt
+      - run: uv run mutmut html
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: |
+            html
+            mutation-results.txt
+          if-no-files-found: warn
+
+  vscode:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/vscode-query-analyzer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: integrations/vscode-query-analyzer/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+      - run: npm audit --omit=dev --json > ../../vscode-audit.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-report
+          path: vscode-audit.json
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Bandit
+        run: |
+          mkdir -p build/reports/security
+          uv run bandit -r query_analyzer -f json -o build/reports/security/bandit.json || true
+          uv run bandit -r query_analyzer -lll
+
+      - name: Python dependency audit
+        run: |
+          uv export --no-dev --no-hashes --format requirements-txt \
+            --output-file build/runtime-requirements.txt
+          uv run pip-audit -r build/runtime-requirements.txt \
+            --format=json --output=build/reports/security/pip-audit.json
+
+      - name: Semgrep
+        run: |
+          uv run --with semgrep semgrep scan --config auto \
+            --json-output=build/reports/security/semgrep.json \
+            --sarif-output=build/reports/security/semgrep.sarif .
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: build/reports/security/semgrep.sarif
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: build/reports/security
+          if-no-files-found: error
+
+  sonar:
+    runs-on: ubuntu-latest
+    needs: python-quality
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-quality-reports
+          path: downloaded-python-quality
+
+      - name: Scan SonarCloud
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          args: >
+            -Dsonar.python.coverage.reportPaths=downloaded-python-quality/reports/coverage.xml
+            -Dsonar.python.xunit.reportPath=downloaded-python-quality/test-results/python-quality.xml
+        env:
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
+
+      - name: Record Sonar status
+        run: |
+          mkdir -p build/reports/sonar
+          if [ -n "$SONAR_TOKEN" ]; then
+            printf '{"status":"submitted","url":"https://sonarcloud.io/project/overview?id=UPT-FAING-EPIS_proyecto-si783-2026-i-u1-analizador-de-rendimiento-de-consultas"}\n' > build/reports/sonar/status.json
+          else
+            printf '{"status":"not-configured","requiredSecret":"SONAR_TOKEN"}\n' > build/reports/sonar/status.json
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonar-report
+          path: build/reports/sonar
+
+  interface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/ui/package-lock.json
+
+      - run: uv sync
+      - run: uv run python scripts/build-pages.py
+
+      - working-directory: tests/ui
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interface-evidence
+          path: |
+            build/reports/playwright
+            build/test-results/playwright
+            build/test-results/interface/playwright.xml
+          if-no-files-found: error
+
+  pages:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    needs:
+      - python-quality
+      - database-integration
+      - mssql-integration
+      - mutation
+      - vscode
+      - security
+      - sonar
+      - interface
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+
+      - run: uv sync
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - run: uv run python scripts/build-pages.py
+
+      - name: Collect evidence
+        shell: bash
+        run: |
+          copy_first() {
+            target="$1"
+            shift
+            for source in "$@"; do
+              if [ -e "$source" ]; then
+                mkdir -p "$target"
+                cp -R "$source"/. "$target"/
+                return
+              fi
+            done
+          }
+          copy_first build/pages-site/reports/coverage \
+            artifacts/python-quality-reports/reports/coverage \
+            artifacts/python-quality-reports/build/reports/coverage
+          copy_first build/pages-site/reports/unit \
+            artifacts/python-quality-reports/test-results \
+            artifacts/python-quality-reports/build/test-results
+          copy_first build/pages-site/reports/integration \
+            artifacts/database-integration-reports/test-results \
+            artifacts/database-integration-reports/build/test-results
+          copy_first build/pages-site/reports/mutation artifacts/mutation-report
+          copy_first build/pages-site/reports/interface \
+            artifacts/interface-evidence/reports/playwright \
+            artifacts/interface-evidence/build/reports/playwright
+          copy_first build/pages-site/reports/security \
+            artifacts/security-reports \
+            artifacts/security-reports/build/reports/security
+          copy_first build/pages-site/reports/sonar \
+            artifacts/sonar-report \
+            artifacts/sonar-report/build/reports/sonar
+          copy_first build/pages-site/reports/vscode artifacts/vscode-report
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/pages-site
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

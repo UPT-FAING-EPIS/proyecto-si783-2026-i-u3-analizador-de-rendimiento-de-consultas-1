@@ -14,7 +14,12 @@ def ensure_adapters_registered() -> None:
     """
     # Import to trigger registration via decorators
     from query_analyzer.adapters.graph import Neo4jAdapter  # noqa: F401
-    from query_analyzer.adapters.nosql import MongoDBAdapter  # noqa: F401
+    from query_analyzer.adapters.nosql import (  # noqa: F401
+        CassandraAdapter,
+        DynamoDBAdapter,
+        MongoDBAdapter,
+    )
+    from query_analyzer.adapters.redis import RedisAdapter  # noqa: F401
     from query_analyzer.adapters.sql import (  # noqa: F401
         CockroachDBAdapter,
         MySQLAdapter,
@@ -22,6 +27,7 @@ def ensure_adapters_registered() -> None:
         SQLiteAdapter,
         YugabyteDBAdapter,
     )
+    from query_analyzer.adapters.timeseries import InfluxDBAdapter  # noqa: F401
 
     try:
         from query_analyzer.adapters.sql import MSSQLAdapter  # noqa: F401
@@ -43,9 +49,13 @@ def ensure_adapters_registered() -> None:
         ("mysql", MySQLAdapter),
         ("sqlite", SQLiteAdapter),
         ("mongodb", MongoDBAdapter),
+        ("redis", RedisAdapter),
+        ("dynamodb", DynamoDBAdapter),
+        ("cassandra", CassandraAdapter),
         ("cockroachdb", CockroachDBAdapter),
         ("yugabytedb", YugabyteDBAdapter),
         ("neo4j", Neo4jAdapter),
+        ("influxdb", InfluxDBAdapter),
     ]
 
     if has_mssql:

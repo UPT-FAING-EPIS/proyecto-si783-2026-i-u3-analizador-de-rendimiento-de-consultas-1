@@ -59,6 +59,10 @@ integrations/vscode-query-analyzer/out/
 .coverage
 .coverage.*
 htmlcov/
+.mutmut-cache/
+mutants/
+tests/ui/test-results/
+tests/ui/playwright-report/
 .tox/
 .hypothesis/
 
@@ -90,6 +94,7 @@ credentials/
 query_analyzer.db
 *.log
 logs/
+artifacts/
 
 # ==========================================
 # OS

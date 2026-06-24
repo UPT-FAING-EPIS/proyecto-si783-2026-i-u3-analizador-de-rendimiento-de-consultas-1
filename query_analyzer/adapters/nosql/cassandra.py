@@ -11,7 +11,7 @@ Key features:
 - Size estimation via system.size_estimates
 
 Note: cassandra-driver requires explicit installation on Python 3.14
-due to Windows build issues. Install with: pip install cassandra-driver==3.29.3
+due to Windows build issues. Install with: uv add cassandra-driver==3.29.3
 """
 
 import logging
@@ -76,8 +76,7 @@ class CassandraAdapter(BaseAdapter):
         """
         if Cluster is None:
             raise AdapterConnectionError(
-                "cassandra-driver is not installed. "
-                "Install with: pip install cassandra-driver==3.29.3"
+                "cassandra-driver is not installed. Install with: uv add cassandra-driver==3.29.3"
             )
 
         try:

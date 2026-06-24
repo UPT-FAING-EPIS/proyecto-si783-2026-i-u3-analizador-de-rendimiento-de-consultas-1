@@ -1,4 +1,4 @@
-.PHONY: help up down restart reset seed logs logs-postgres logs-mysql logs-mongodb logs-redis logs-influxdb logs-neo4j logs-cockroachdb logs-elasticsearch logs-mssql health clean ps wait-healthy init-sqlite test test-unit test-fast test-coverage test-pg test-mysql test-sqlite test-crdb test-yugabyte test-es test-mssql test-verbose test-clean create-profiles profiles-force profiles-check profiles-reset profiles-list profiles-validate
+.PHONY: help up down restart reset seed logs logs-postgres logs-mysql logs-mongodb logs-redis logs-influxdb logs-neo4j logs-cockroachdb logs-elasticsearch logs-mssql health clean ps wait-healthy init-sqlite test test-unit test-contract test-bdd test-interface test-integration test-quality test-mutation test-security test-fast test-coverage test-pg test-mysql test-sqlite test-crdb test-yugabyte test-es test-mssql test-verbose test-clean create-profiles profiles-force profiles-check profiles-reset profiles-list profiles-validate
 
 help:
 	@echo "🔍 Query Analyzer - Docker Management"
@@ -28,6 +28,12 @@ help:
 	@echo "Testing commands:"
 	@echo "  make test            - Run all 126 integration tests (starts Docker)"
 	@echo "  make test-unit       - Run unit tests only (no Docker needed)"
+	@echo "  make test-contract   - Verify the common contract for all 13 engines"
+	@echo "  make test-bdd        - Run executable Given/When/Then scenarios"
+	@echo "  make test-interface  - Run CLI, TUI, API and MCP interface tests"
+	@echo "  make test-quality    - Run local quality suites and coverage gate"
+	@echo "  make test-mutation   - Run mutation testing on core contracts"
+	@echo "  make test-security   - Run Bandit and dependency audit"
 	@echo "  make test-fast       - Run quick unit tests (excludes integration tests)"
 	@echo "  make test-coverage   - Run tests with coverage report"
 	@echo "  make test-pg         - Run PostgreSQL integration tests only (30+ tests)"
@@ -145,6 +151,51 @@ test-unit:
 	@echo "🧪 Running unit tests only..."
 	@uv run python -m pytest tests/unit/ -v
 	@echo "✅ Unit tests completed!"
+
+test-contract:
+	@echo "📐 Running contracts for all supported engines..."
+	@uv run pytest tests/contract/ -v --junitxml=build/test-results/contract.xml
+
+test-bdd:
+	@echo "🥒 Running BDD acceptance scenarios..."
+	@uv run pytest tests/bdd/ -v --junitxml=build/test-results/bdd.xml
+
+test-interface:
+	@echo "🖥️  Running Python interface tests..."
+	@uv run pytest \
+		tests/unit/test_api_app.py \
+		tests/unit/test_api_router.py \
+		tests/unit/test_cli_api.py \
+		tests/unit/test_cli_profile.py \
+		tests/unit/test_mcp_server.py \
+		tests/unit/test_tui_analysis_screen_bindings.py \
+		tests/unit/test_tui_connection_screen.py \
+		-v --junitxml=build/test-results/interface-python.xml
+
+test-integration: wait-healthy seed
+	@uv run pytest tests/integration/ -v --junitxml=build/test-results/integration.xml
+
+test-quality:
+	@uv run ruff check .
+	@uv run ruff format --check .
+	@uv run mypy query_analyzer
+	@uv run pytest tests/unit/ tests/contract/ tests/bdd/ \
+		--cov=query_analyzer \
+		--cov-report=term-missing \
+		--cov-report=html:build/reports/coverage \
+		--cov-report=xml:build/reports/coverage.xml \
+		--cov-fail-under=65 \
+		--junitxml=build/test-results/python-quality.xml
+
+test-mutation:
+	@uv run mutmut run
+	@uv run mutmut html
+
+test-security:
+	@uv run bandit -r query_analyzer -f json -o build/reports/security/bandit.json || true
+	@uv run bandit -r query_analyzer -lll
+	@uv export --no-dev --no-hashes --format requirements-txt --output-file build/runtime-requirements.txt
+	@uv run pip-audit -r build/runtime-requirements.txt --format=json --output=build/reports/security/pip-audit.json
 
 test-fast:
 	@echo "⚡ Running quick unit tests (no Docker)..."

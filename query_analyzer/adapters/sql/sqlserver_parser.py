@@ -1,7 +1,8 @@
 """SQL Server SHOWPLAN XML parser for EXPLAIN analysis."""
 
-import xml.etree.ElementTree as ET
 from typing import Any
+
+from defusedxml import ElementTree
 
 
 class MSSQLExplainParser:
@@ -33,7 +34,7 @@ class MSSQLExplainParser:
             Dict with: execution_time_ms, total_cost, node_count,
             most_expensive_node, scan_nodes, join_nodes, all_nodes
         """
-        root = ET.fromstring(xml_string)
+        root = ElementTree.fromstring(xml_string)
         ns = {"sql": self._SHOWPLAN_NS}
 
         stmt_simple = root.find(".//sql:StmtSimple", ns)
@@ -76,8 +77,8 @@ class MSSQLExplainParser:
 
     def _collect_nodes(
         self,
-        relops: list[ET.Element],
-        root: ET.Element,
+        relops: list[Any],
+        root: Any,
         ns: dict[str, str],
     ) -> list[dict[str, Any]]:
         """Recursively extract all nodes from RelOp elements."""
@@ -130,7 +131,7 @@ class MSSQLExplainParser:
 
         return all_nodes
 
-    def _find_most_expensive(self, relops: list[ET.Element]) -> dict[str, Any]:
+    def _find_most_expensive(self, relops: list[Any]) -> dict[str, Any]:
         """Find the RelOp with highest EstimatedTotalSubtreeCost."""
         most_expensive: dict[str, Any] = {}
         max_cost = 0.0
@@ -169,7 +170,7 @@ class MSSQLExplainParser:
 
     def _normalize_from_xml(self, xml_string: str) -> dict[str, Any]:
         """Parse XML string into a normalized plan rooted at the outermost RelOp."""
-        root = ET.fromstring(xml_string)
+        root = ElementTree.fromstring(xml_string)
         ns = {"sql": self._SHOWPLAN_NS}
 
         stmt = root.find(".//sql:StmtSimple", ns)
@@ -215,7 +216,7 @@ class MSSQLExplainParser:
             "children": children,
         }
 
-    def _normalize_relop(self, relop: ET.Element, ns: dict[str, str]) -> dict[str, Any]:
+    def _normalize_relop(self, relop: Any, ns: dict[str, str]) -> dict[str, Any]:
         """Recursively normalize an XML RelOp element."""
         physical_op = relop.get("PhysicalOp", "Unknown")
         logical_op = relop.get("LogicalOp", "Unknown")

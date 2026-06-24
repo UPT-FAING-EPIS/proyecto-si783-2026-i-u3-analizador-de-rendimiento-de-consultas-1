@@ -1,9 +1,10 @@
 """MSSQL (SQL Server) database adapter using pymssql."""
 
 import logging
-import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from typing import Any
+
+from defusedxml import ElementTree
 
 from query_analyzer.adapters.base import BaseAdapter
 from query_analyzer.adapters.exceptions import (
@@ -218,7 +219,7 @@ class MSSQLAdapter(BaseAdapter):
             Dict compatible with build_plan_tree
         """
         try:
-            root = ET.fromstring(xml_string)
+            root = ElementTree.fromstring(xml_string)
             ns = {"sql": MSSQLExplainParser._SHOWPLAN_NS}
             stmt = root.find(".//sql:StmtSimple", ns)
             if stmt is None:
@@ -234,7 +235,7 @@ class MSSQLAdapter(BaseAdapter):
             logger.debug(f"Failed to convert XML to plan dict: {e}")
             return {}
 
-    def _relop_to_dict(self, relop: ET.Element, ns: dict[str, str]) -> dict[str, Any]:
+    def _relop_to_dict(self, relop: Any, ns: dict[str, str]) -> dict[str, Any]:
         """Recursively convert RelOp element to dict for build_plan_tree."""
         physical_op = relop.get("PhysicalOp", "Unknown")
 
