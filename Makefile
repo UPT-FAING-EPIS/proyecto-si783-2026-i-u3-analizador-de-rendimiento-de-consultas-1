@@ -189,7 +189,8 @@ test-quality:
 
 test-mutation:
 	@uv run mutmut run
-	@uv run mutmut html
+	@uv run mutmut results > mutation-results.txt
+	@uv run python scripts/build-mutation-report.py
 
 test-security:
 	@uv run bandit -r query_analyzer -f json -o build/reports/security/bandit.json || true
