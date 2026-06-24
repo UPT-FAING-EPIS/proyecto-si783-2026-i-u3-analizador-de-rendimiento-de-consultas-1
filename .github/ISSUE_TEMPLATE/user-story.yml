@@ -1,0 +1,57 @@
+name: Historia de usuario
+description: Cambio trazable para Query Analyzer
+title: "[HU] "
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: Historia de usuario
+      placeholder: |
+        Como [rol]
+        Quiero [capacidad]
+        Para [beneficio]
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceptación
+      placeholder: |
+        - [ ] CA-01 ...
+        - [ ] CA-02 ...
+    validations:
+      required: true
+  - type: textarea
+    id: scenarios
+    attributes:
+      label: Escenarios Dado/Cuando/Entonces
+      description: Incluya escenarios positivos y negativos para cada criterio crítico.
+    validations:
+      required: true
+  - type: checkboxes
+    id: engines
+    attributes:
+      label: Motores o interfaces afectadas
+      options:
+        - label: SQL / NewSQL
+        - label: NoSQL / búsqueda
+        - label: Grafos / series de tiempo
+        - label: CLI / TUI
+        - label: API / MCP
+        - label: Extensión VS Code
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidencia y trazabilidad
+      description: Enlace pruebas, reportes, requisitos o documentos.
+    validations:
+      required: true
+  - type: dropdown
+    id: version
+    attributes:
+      label: Versión objetivo
+      options:
+        - v2.x
+        - v3.x
+    validations:
+      required: true

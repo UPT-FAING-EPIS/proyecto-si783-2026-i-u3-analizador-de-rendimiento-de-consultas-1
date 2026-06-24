@@ -1,4 +1,7 @@
-# Índice de documentación
+# Query Analyzer - Documentación y Evidencias
+
+Este índice reúne documentación académica, manuales técnicos y reportes de calidad del
+**Analizador de Rendimiento de Consultas (Query Analyzer)**.
 
 ## Inicio
 
@@ -31,5 +34,26 @@ motor.
 
 - [Factibilidad](FD01-Informe-Factibilidad.md)
 - [Visión](FD02-Informe-Vision.md)
-- [Especificación de requisitos](FD03-Especificacion-Requerimientos.md)
-- [Arquitectura](FD04-Informe-Arquitectura.md)
+- [Especificación de requisitos](FD03-EPIS-Informe%20Especificación%20Requerimientos.md)
+- [Arquitectura](FD04-EPIS-Informe%20Arquitectura%20de%20Software.md)
+- [Informe final](FD05-EPIS-Informe%20ProyectoFinal.md)
+- [Estándar de programación](Estandar-de-Programacion.md)
+- [Diccionario de datos](DICCIONARIO-DE-DATOS.md)
+- [Manual de usuario](Manual-de-Usuario.md)
+- [GitHub Project y trazabilidad](Github-Project-y-Trazabilidad.md)
+- [Calidad y evidencias](Calidad-y-Evidencias.md)
+
+## Reportes automatizados
+
+El workflow `quality-pages.yml` publica:
+
+- cobertura;
+- pruebas unitarias;
+- contratos de los 13 motores;
+- integración con motores reales o emulados;
+- BDD;
+- mutación;
+- interfaz documental;
+- extensión de VS Code;
+- Bandit, Semgrep y auditoría de dependencias;
+- estado de SonarCloud.

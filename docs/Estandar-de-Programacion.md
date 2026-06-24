@@ -1,4 +1,4 @@
-<div align="center">
+<center>
 
 ![Logo UPT](./media/logo-upt.png)
 
@@ -8,41 +8,57 @@
 
 **Escuela Profesional de Ingeniería de Sistemas**
 
-<br>
+**Estándar de Programación**
 
-# ESTÁNDARES DE PROGRAMACIÓN
+**Sistema Analizador de Rendimiento de Consultas (Query Analyzer)**
 
-## PROYECTO: ANALIZADOR DE RENDIMIENTO DE CONSULTAS
+Curso: *Base de Datos II*
 
-**Sistema Query Analyzer**
+Docente: *Patrick Cuadros Quiroga*
 
-<br>
+Integrantes:
 
-**Curso:** Base de Datos II
+***Carbajal Vargas, Andre Alejandro (2023077287)***
 
-**Docente:** Mag. Patrick Cuadros Quiroga
+***Yupa Gómez, Fátima Sofía (2023076618)***
 
-**Integrantes:**
+**Tacna - Perú**
 
-**Carbajal Vargas, Andre Alejandro (2023077287)**
+***2026***
 
-**Yupa Gómez, Fátima Sofía (2023076618)**
+</center>
 
-<br>
+<div style="page-break-after: always; visibility: hidden">\pagebreak</div>
 
-**Tacna – Perú**
+Sistema *Analizador de Rendimiento de Consultas (Query Analyzer)*
 
-**2026**
+Estándar de Programación
 
-</div>
+Versión *1.1*
 
-<div style="page-break-after: always;"></div>
+| CONTROL DE VERSIONES | | | | | |
+|:---:|:---|:---|:---|:---:|:---|
+| Versión | Hecha por | Revisada por | Aprobada por | Fecha | Motivo |
+| 1.0 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-06-23 | Primera versión formal |
+| 1.1 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-06-23 | Formato institucional y criterios de calidad automatizada |
 
-# CONTROL DE VERSIONES
+# ÍNDICE GENERAL
 
-| Versión | Elaborado por | Revisado por | Fecha | Motivo |
-|:---:|---|---|:---:|---|
-| 1.0 | AACV / FSYG | AACV / FSYG | 23/06/2026 | Primera versión formal para Query Analyzer 2.3.1 |
+1. [Propósito](#1-propósito)
+2. [Alcance](#2-alcance)
+3. [Entorno y herramientas](#3-entorno-y-herramientas)
+4. [Organización del código](#4-organización-del-código)
+5. [Estilo de Python](#5-estilo-de-python)
+6. [Patrón Adapter](#6-patrón-adapter)
+7. [Manejo de errores](#7-manejo-de-errores)
+8. [Seguridad](#8-seguridad)
+9. [Separación entre evidencia e IA](#9-separación-entre-evidencia-e-ia)
+10. [Estándares de API REST](#10-estándares-de-api-rest)
+11. [Estándares de TypeScript y VS Code](#11-estándares-de-typescript-y-vs-code)
+12. [Pruebas](#12-pruebas)
+13. [Documentación](#13-documentación)
+14. [Git y control de cambios](#14-git-y-control-de-cambios)
+15. [Lista de verificación](#15-lista-de-verificación)
 
 # 1. Propósito
 
@@ -331,7 +347,9 @@ except ConnectionError as exc:
 uv run ruff check --fix
 uv run ruff format
 uv run mypy query_analyzer
-uv run pytest tests/unit/
+uv run pytest tests/unit/ tests/contract/ tests/bdd/
+uv run pytest tests/unit/ tests/contract/ tests/bdd/ \
+  --cov=query_analyzer --cov-report=term-missing --cov-fail-under=65
 ```
 
 Para integración:
@@ -342,6 +360,17 @@ make health
 uv run pytest tests/integration/
 make down
 ```
+
+Para seguridad y mutación:
+
+```bash
+make test-security
+make test-mutation
+```
+
+La mutación se ejecuta en Linux o WSL porque `mutmut` no soporta Windows de forma nativa. La
+auditoría de dependencias se aplica a las dependencias de ejecución exportadas por `uv`; las
+herramientas de desarrollo se evalúan por separado.
 
 Para la extensión:
 

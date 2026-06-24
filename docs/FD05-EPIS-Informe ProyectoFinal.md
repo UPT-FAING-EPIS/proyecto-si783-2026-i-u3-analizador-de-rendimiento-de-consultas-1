@@ -1,4 +1,4 @@
-<div align="center">
+<center>
 
 ![Logo UPT](./media/logo-upt.png)
 
@@ -8,43 +8,39 @@
 
 **Escuela Profesional de Ingeniería de Sistemas**
 
-<br>
+**Informe Final de Proyecto**
 
-# INFORME FINAL
+**Sistema Analizador de Rendimiento de Consultas (Query Analyzer)**
 
-## PROYECTO: ANALIZADOR DE RENDIMIENTO DE CONSULTAS
+Curso: *Base de Datos II*
 
-**Sistema Query Analyzer**
+Docente: *Patrick Cuadros Quiroga*
 
-<br>
+Integrantes:
 
-**Curso:** Base de Datos II
+***Carbajal Vargas, Andre Alejandro (2023077287)***
 
-**Docente:** Mag. Patrick Cuadros Quiroga
+***Yupa Gómez, Fátima Sofía (2023076618)***
 
-**Integrantes:**
+**Tacna - Perú**
 
-**Carbajal Vargas, Andre Alejandro (2023077287)**
+***2026***
 
-**Yupa Gómez, Fátima Sofía (2023076618)**
+</center>
 
-<br>
+<div style="page-break-after: always; visibility: hidden">\pagebreak</div>
 
-**Tacna – Perú**
+Sistema *Analizador de Rendimiento de Consultas (Query Analyzer)*
 
-**2026**
+Informe Final de Proyecto
 
-</div>
+Versión *1.1*
 
-<div style="page-break-after: always;"></div>
-
-# CONTROL DE VERSIONES
-
-| Versión | Elaborado por | Revisado por | Aprobado por | Fecha | Motivo |
-|:---:|---|---|---|:---:|---|
-| 1.0 | AACV / FSYG | AACV / FSYG | Mag. Patrick Cuadros Quiroga | 23/06/2026 | Elaboración del informe final conforme al estado de Query Analyzer 2.3.1 |
-
-<div style="page-break-after: always;"></div>
+| CONTROL DE VERSIONES | | | | | |
+|:---:|:---|:---|:---|:---:|:---|
+| Versión | Hecha por | Revisada por | Aprobada por | Fecha | Motivo |
+| 1.0 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-06-23 | Elaboración del informe final para Query Analyzer 2.3.1 |
+| 1.1 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-06-23 | Unificación institucional y ampliación de evidencias de calidad |
 
 # ÍNDICE GENERAL
 
@@ -461,15 +457,21 @@ sequenceDiagram
 | Control | Herramienta | Resultado de la revisión del 23/06/2026 |
 |---|---|---|
 | Lint | Ruff | Aprobado |
-| Formato | Ruff Format | 153 archivos conformes |
+| Formato | Ruff Format | Aprobado |
 | Tipado estático | mypy | Sin incidencias en 85 archivos fuente |
-| Pruebas unitarias Python | pytest | 483 aprobadas, 1 omitida |
+| Pruebas unitarias, contratos y BDD | pytest / pytest-bdd | 523 aprobadas, 3 omitidas |
+| Cobertura del alcance unitario | pytest-cov | 66,94%; umbral mínimo 65% |
+| Contrato de adaptadores | pytest | 13 motores registrados y verificados |
+| Integración DynamoDB | Moto / boto3 | Aprobada con servicio emulado |
 | Pruebas de extensión | Node Test Runner | 15 aprobadas |
 | Auditoría npm | npm | 0 vulnerabilidades reportadas |
+| Seguridad | Bandit / Semgrep / pip-audit | Reportes automatizados y bloqueo por severidad |
+| Interfaz documental | Playwright | Navegación, vista móvil, trazas y video |
 
-La suite del repositorio también incluye pruebas de integración por motor y un workflow que levanta
-servicios Docker, carga datos semilla, ejecuta controles de calidad y genera cobertura. Estas pruebas
-requieren Docker y se mantienen separadas de las pruebas unitarias.
+La suite también incluye integración por motor, pruebas de mutación y un workflow que levanta
+servicios Docker, carga datos semilla y publica los reportes en GitHub Pages. Las pruebas que
+requieren infraestructura se mantienen separadas de la suite unitaria para identificar con claridad
+qué evidencia procede de un motor real, de un emulador o de una prueba de contrato.
 
 ### Criterios alcanzados
 
@@ -652,7 +654,7 @@ Documento FD04 con vistas arquitectónicas, componentes, procesos, despliegue y 
 
 ## Anexo 05. Estándares de programación
 
-Documento `ESTANDARES-DE-PROGRAMACION.md`, que establece convenciones para Python, TypeScript,
+Documento `Estandar-de-Programacion.md`, que establece convenciones para Python, TypeScript,
 pruebas, seguridad, Git y documentación.
 
 ## Anexo 06. Diccionario de datos

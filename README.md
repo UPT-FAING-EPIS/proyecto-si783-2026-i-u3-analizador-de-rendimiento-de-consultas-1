@@ -23,13 +23,17 @@ TimeSeries, con interfaces CLI y TUI.
 - PostgreSQL
 - MySQL
 - SQLite
+- Microsoft SQL Server
 - CockroachDB
 - YugabyteDB
 
 ### NoSQL
 
 - MongoDB
+- Redis
 - DynamoDB
+- Cassandra
+- Elasticsearch
 
 ### TimeSeries y grafos
 

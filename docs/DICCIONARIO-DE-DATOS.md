@@ -1,4 +1,4 @@
-<div align="center">
+<center>
 
 ![Logo UPT](./media/logo-upt.png)
 
@@ -8,41 +8,55 @@
 
 **Escuela Profesional de Ingeniería de Sistemas**
 
-<br>
+**Diccionario de Datos**
 
-# DICCIONARIO DE DATOS
+**Sistema Analizador de Rendimiento de Consultas (Query Analyzer)**
 
-## PROYECTO: ANALIZADOR DE RENDIMIENTO DE CONSULTAS
+Curso: *Base de Datos II*
 
-**Sistema Query Analyzer**
+Docente: *Patrick Cuadros Quiroga*
 
-<br>
+Integrantes:
 
-**Curso:** Base de Datos II
+***Carbajal Vargas, Andre Alejandro (2023077287)***
 
-**Docente:** Mag. Patrick Cuadros Quiroga
+***Yupa Gómez, Fátima Sofía (2023076618)***
 
-**Integrantes:**
+**Tacna - Perú**
 
-**Carbajal Vargas, Andre Alejandro (2023077287)**
+***2026***
 
-**Yupa Gómez, Fátima Sofía (2023076618)**
+</center>
 
-<br>
+<div style="page-break-after: always; visibility: hidden">\pagebreak</div>
 
-**Tacna – Perú**
+Sistema *Analizador de Rendimiento de Consultas (Query Analyzer)*
 
-**2026**
+Diccionario de Datos
 
-</div>
+Versión *1.1*
 
-<div style="page-break-after: always;"></div>
+| CONTROL DE VERSIONES | | | | | |
+|:---:|:---|:---|:---|:---:|:---|
+| Versión | Hecha por | Revisada por | Aprobada por | Fecha | Motivo |
+| 1.0 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-06-23 | Diccionario lógico y físico local de Query Analyzer 2.3.1 |
+| 1.1 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-06-23 | Formato institucional y actualización a los 13 motores soportados |
 
-# CONTROL DE VERSIONES
+# ÍNDICE GENERAL
 
-| Versión | Elaborado por | Revisado por | Fecha | Motivo |
-|:---:|---|---|:---:|---|
-| 1.0 | AACV / FSYG | AACV / FSYG | 23/06/2026 | Diccionario lógico y físico local de Query Analyzer 2.3.1 |
+1. [Introducción](#1-introducción)
+2. [Convenciones](#2-convenciones)
+3. [Mapa de estructuras](#3-mapa-de-estructuras)
+4. [Persistencia local](#4-persistencia-local)
+5. [Modelos de configuración](#5-modelos-de-configuración)
+6. [Modelos de análisis](#6-modelos-de-análisis)
+7. [Historial](#7-historial)
+8. [Diagnóstico de conexiones](#8-diagnóstico-de-conexiones)
+9. [Contratos de la API REST](#9-contratos-de-la-api-rest)
+10. [Endpoints](#10-endpoints)
+11. [Diccionario de métricas comunes](#11-diccionario-de-métricas-comunes)
+12. [Reglas de integridad y seguridad](#12-reglas-de-integridad-y-seguridad)
+13. [Trazabilidad con el código](#13-trazabilidad-con-el-código)
 
 # 1. Introducción
 
@@ -156,8 +170,8 @@ Representa un perfil guardado en YAML.
 | `password` | `str \| null` | No | Se cifra al persistir |
 | `extra` | `dict[str, Any]` | No | Propiedades particulares del motor |
 
-Motores admitidos por este modelo: PostgreSQL, MySQL, SQLite, MongoDB, Redis, CockroachDB,
-YugabyteDB, Neo4j, InfluxDB, Elasticsearch y Microsoft SQL Server.
+Motores admitidos: PostgreSQL, MySQL, SQLite, Microsoft SQL Server, CockroachDB, YugabyteDB,
+MongoDB, Redis, DynamoDB, Cassandra, Elasticsearch, Neo4j e InfluxDB.
 
 ## 5.2. `AppDefaults`
 
@@ -196,10 +210,16 @@ Modelo de ejecución construido a partir de un perfil o solicitud.
 | PostgreSQL | 5432 |
 | MySQL | 3306 |
 | Microsoft SQL Server | 1433 |
+| CockroachDB | 26257 |
+| YugabyteDB | 5433 |
 | MongoDB | 27017 |
 | Redis | 6379 |
-| Neo4j | 7687 |
+| Cassandra | 9042 |
 | Elasticsearch | 9200 |
+| Neo4j | 7687 |
+| InfluxDB | 8086 |
+
+SQLite y DynamoDB no requieren un puerto obligatorio en su configuración estándar.
 
 # 6. Modelos de análisis
 
@@ -387,7 +407,7 @@ Reglas:
 |---|---|:---:|---|
 | `base_url` | `str` | Sí | URL del proveedor |
 | `api_key` | `SecretStr` | Sí | Clave temporal |
-| `model` | `str` | Sí | `gpt-4o` por defecto en el esquema |
+| `model` | `str` | Sí | Modelo configurado en el esquema |
 
 ### `AIAnalyzeRequest`
 

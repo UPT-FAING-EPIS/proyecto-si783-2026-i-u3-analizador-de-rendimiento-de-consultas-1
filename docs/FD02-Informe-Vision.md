@@ -1,3 +1,47 @@
+<center>
+
+![Logo UPT](./media/logo-upt.png)
+
+**UNIVERSIDAD PRIVADA DE TACNA**
+
+**FACULTAD DE INGENIERÍA**
+
+**Escuela Profesional de Ingeniería de Sistemas**
+
+**Informe de Visión**
+
+**Sistema Analizador de Rendimiento de Consultas (Query Analyzer)**
+
+Curso: *Base de Datos II*
+
+Docente: *Patrick Cuadros Quiroga*
+
+Integrantes:
+
+***Carbajal Vargas, Andre Alejandro (2023077287)***
+
+***Yupa Gómez, Fátima Sofía (2023076618)***
+
+**Tacna - Perú**
+
+***2026***
+
+</center>
+
+<div style="page-break-after: always; visibility: hidden">\pagebreak</div>
+
+Sistema *Analizador de Rendimiento de Consultas (Query Analyzer)*
+
+Informe de Visión
+
+Versión *1.1*
+
+| CONTROL DE VERSIONES | | | | | |
+|:---:|:---|:---|:---|:---:|:---|
+| Versión | Hecha por | Revisada por | Aprobada por | Fecha | Motivo |
+| 1.0 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-04-04 | Versión inicial |
+| 1.1 | ACV, FYG | ACV, FYG | P. Cuadros Q. | 2026-06-23 | Actualización factual y formato institucional |
+
 # FD02 - Informe de visión
 
 ## Visión
