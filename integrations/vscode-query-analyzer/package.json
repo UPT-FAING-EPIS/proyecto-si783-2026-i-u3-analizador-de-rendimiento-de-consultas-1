@@ -2,7 +2,7 @@
   "name": "vscode-query-analyzer",
   "displayName": "Query Analyzer",
   "description": "Analyze selected SQL with a bundled Query Analyzer API.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "andre-carbajal",
   "license": "MIT",
   "repository": {

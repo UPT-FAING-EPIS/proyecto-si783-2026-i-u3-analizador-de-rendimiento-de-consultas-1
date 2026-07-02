@@ -36,11 +36,9 @@ test("resolveDevelopmentRepoRoot finds local source checkout from extension fold
 });
 
 test("resolveManagedApiCommand falls back to uv in local development", () => {
-  const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
-  const command = resolveManagedApiCommand(
-    path.join(repoRoot, "integrations", "vscode-query-analyzer"),
-    8123
-  );
+  const repoRoot = createLocalSourceCheckout();
+  const extensionRoot = path.join(repoRoot, "integrations", "vscode-query-analyzer");
+  const command = resolveManagedApiCommand(extensionRoot, 8123);
 
   assert.equal(command.command, "uv");
   assert.deepEqual(command.args, ["run", "qa-api"]);
@@ -100,3 +98,15 @@ test("resolveApiUrl starts managed server by default", async () => {
 
   assert.equal(await resolveApiUrl(config, server), "http://127.0.0.1:8765");
 });
+
+function createLocalSourceCheckout(): string {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qa-source-checkout-"));
+
+  fs.writeFileSync(path.join(repoRoot, "pyproject.toml"), "[project]\nname = \"query-analyzer\"\n");
+  fs.mkdirSync(path.join(repoRoot, "query_analyzer"));
+  fs.mkdirSync(path.join(repoRoot, "integrations", "vscode-query-analyzer"), {
+    recursive: true
+  });
+
+  return repoRoot;
+}
