@@ -38,6 +38,46 @@ export function upsertProfile(
   };
 }
 
+export function renameProfile(
+  profiles: ProfilesConfig | undefined,
+  oldName: string,
+  profile: QueryAnalyzerProfile
+): ProfilesConfig {
+  const nextProfiles = { ...(profiles ?? {}) };
+
+  if (oldName !== profile.name && nextProfiles[profile.name]) {
+    throw new Error(`Profile '${profile.name}' already exists.`);
+  }
+
+  delete nextProfiles[oldName];
+  nextProfiles[profile.name] = profile.connection;
+  return nextProfiles;
+}
+
+export function deleteProfile(
+  profiles: ProfilesConfig | undefined,
+  name: string
+): ProfilesConfig {
+  const nextProfiles = { ...(profiles ?? {}) };
+  delete nextProfiles[name];
+  return nextProfiles;
+}
+
+export function defaultProfileAfterRename(
+  defaultProfile: string | undefined,
+  oldName: string,
+  newName: string
+): string {
+  return defaultProfile === oldName ? newName : defaultProfile ?? "";
+}
+
+export function defaultProfileAfterDelete(
+  defaultProfile: string | undefined,
+  deletedName: string
+): string {
+  return defaultProfile === deletedName ? "" : defaultProfile ?? "";
+}
+
 export function defaultPortForEngine(engine: string): number | undefined {
   const ports: Record<string, number> = {
     postgresql: 5432,

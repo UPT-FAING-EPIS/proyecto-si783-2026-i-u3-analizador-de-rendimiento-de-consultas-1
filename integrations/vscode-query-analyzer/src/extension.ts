@@ -12,14 +12,45 @@ import {
   SUPPORTED_ENGINES,
   QueryAnalyzerProfile,
   buildProfileDescription,
+  defaultProfileAfterDelete,
+  defaultProfileAfterRename,
   defaultPortForEngine,
+  deleteProfile,
   profilesFromConfig,
+  renameProfile,
   upsertProfile
 } from "./profiles";
 import { resolveApiUrl, ServerManager } from "./serverManager";
 
 const PASSWORD_PREFIX = "queryAnalyzer.profilePassword.";
+const EDIT_PROFILE_BUTTON: vscode.QuickInputButton = {
+  iconPath: new vscode.ThemeIcon("edit"),
+  tooltip: "Edit profile"
+};
+const DELETE_PROFILE_BUTTON: vscode.QuickInputButton = {
+  iconPath: new vscode.ThemeIcon("trash"),
+  tooltip: "Delete profile"
+};
+
 let serverManager: ServerManager | undefined;
+
+type ProfileQuickPickItem = vscode.QuickPickItem & {
+  itemType: "profile" | "create";
+  profile?: QueryAnalyzerProfile;
+};
+
+type ProfileQuickPickResult =
+  | { kind: "select"; profile: QueryAnalyzerProfile }
+  | { kind: "create" }
+  | { kind: "edit"; profile: QueryAnalyzerProfile }
+  | { kind: "delete"; profile: QueryAnalyzerProfile }
+  | { kind: "cancel" };
+
+interface ProfileFormResult {
+  profile: QueryAnalyzerProfile;
+  password?: string;
+  passwordChanged: boolean;
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Query Analyzer");
@@ -35,9 +66,14 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     const config = vscode.workspace.getConfiguration("queryAnalyzer");
-    const profile = await selectProfile(config, context);
+    const profile = await selectProfile(context);
 
     if (!profile) {
+      return;
+    }
+    const profileWithPassword = await ensureProfilePassword(profile, context);
+
+    if (!profileWithPassword) {
       return;
     }
 
@@ -57,7 +93,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const apiUrl = await resolveApiUrl(config, serverManager!);
       const result = await postAnalyze(
         apiUrl,
-        buildAnalyzePayload(selectedText, profile.connection)
+        buildAnalyzePayload(selectedText, profileWithPassword.connection)
       );
       panel.webview.html = renderAnalysisHtml(result);
 
@@ -114,49 +150,43 @@ async function renderAiAnalysisWhenReady(
 }
 
 async function selectProfile(
-  config: vscode.WorkspaceConfiguration,
   context: vscode.ExtensionContext
 ): Promise<QueryAnalyzerProfile | undefined> {
-  const configuredProfiles = config.get<ProfilesConfig>("profiles", {});
-  const profiles = await withStoredPasswords(profilesFromConfig(configuredProfiles), context);
+  while (true) {
+    const config = queryAnalyzerConfig();
+    const configuredProfiles = config.get<ProfilesConfig>("profiles", {});
+    const profiles = await withStoredPasswords(profilesFromConfig(configuredProfiles), context);
 
-  if (profiles.length === 0) {
-    const create = "Create Query Analyzer profile";
-    const selected = await vscode.window.showInformationMessage(
-      "No Query Analyzer profiles configured.",
-      create
-    );
-    return selected === create ? createProfile(config, context, configuredProfiles) : undefined;
-  }
-
-  const defaultProfile = config.get<string>("defaultProfile", "");
-  const createLabel = "$(add) Create new profile";
-  const items = [
-    ...profiles.map((profile) => ({
-      label: profile.name === defaultProfile ? `$(star-full) ${profile.name}` : profile.name,
-      description: buildProfileDescription(profile),
-      profile
-    })),
-    {
-      label: createLabel,
-      description: "Add a database connection profile",
-      profile: undefined
+    if (profiles.length === 0) {
+      const create = "Create Query Analyzer profile";
+      const selected = await vscode.window.showInformationMessage(
+        "No Query Analyzer profiles configured.",
+        create
+      );
+      return selected === create ? createProfile(config, context, configuredProfiles) : undefined;
     }
-  ];
 
-  const selected = await vscode.window.showQuickPick(items, {
-    placeHolder: "Choose the Query Analyzer profile for this analysis"
-  });
+    const action = await pickProfileAction(
+      profiles,
+      config.get<string>("defaultProfile", "")
+    );
 
-  if (!selected) {
-    return undefined;
+    if (action.kind === "cancel") {
+      return undefined;
+    }
+    if (action.kind === "select") {
+      return action.profile;
+    }
+    if (action.kind === "create") {
+      return createProfile(config, context, configuredProfiles);
+    }
+    if (action.kind === "edit") {
+      await editProfile(config, context, action.profile);
+    }
+    if (action.kind === "delete") {
+      await removeProfile(config, context, action.profile);
+    }
   }
-
-  if (!selected.profile) {
-    return createProfile(config, context, configuredProfiles);
-  }
-
-  return selected.profile;
 }
 
 async function withStoredPasswords(
@@ -176,19 +206,256 @@ async function withStoredPasswords(
   return resolved;
 }
 
+function pickProfileAction(
+  profiles: QueryAnalyzerProfile[],
+  defaultProfile: string
+): Promise<ProfileQuickPickResult> {
+  return new Promise((resolve) => {
+    const quickPick = vscode.window.createQuickPick<ProfileQuickPickItem>();
+    let settled = false;
+
+    const settle = (result: ProfileQuickPickResult): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      quickPick.hide();
+      quickPick.dispose();
+      resolve(result);
+    };
+
+    quickPick.placeholder = "Choose the Query Analyzer profile for this analysis";
+    quickPick.matchOnDescription = true;
+    quickPick.items = buildProfileQuickPickItems(profiles, defaultProfile);
+
+    quickPick.onDidAccept(() => {
+      const selected = quickPick.selectedItems[0];
+      if (!selected) {
+        return;
+      }
+      if (selected.itemType === "create") {
+        settle({ kind: "create" });
+        return;
+      }
+      if (selected.profile) {
+        settle({ kind: "select", profile: selected.profile });
+      }
+    });
+
+    quickPick.onDidTriggerItemButton((event) => {
+      if (!event.item.profile) {
+        return;
+      }
+      if (event.button === EDIT_PROFILE_BUTTON) {
+        settle({ kind: "edit", profile: event.item.profile });
+      }
+      if (event.button === DELETE_PROFILE_BUTTON) {
+        settle({ kind: "delete", profile: event.item.profile });
+      }
+    });
+
+    quickPick.onDidHide(() => settle({ kind: "cancel" }));
+    quickPick.show();
+  });
+}
+
+function buildProfileQuickPickItems(
+  profiles: QueryAnalyzerProfile[],
+  defaultProfile: string
+): ProfileQuickPickItem[] {
+  return [
+    ...profiles.map((profile) => ({
+      itemType: "profile" as const,
+      label: profile.name === defaultProfile ? `$(star-full) ${profile.name}` : profile.name,
+      description: buildProfileDescription(profile),
+      buttons: [EDIT_PROFILE_BUTTON, DELETE_PROFILE_BUTTON],
+      profile
+    })),
+    {
+      itemType: "create" as const,
+      label: "$(add) Create new profile",
+      description: "Add a database connection profile"
+    }
+  ];
+}
+
+async function ensureProfilePassword(
+  profile: QueryAnalyzerProfile,
+  context: vscode.ExtensionContext
+): Promise<QueryAnalyzerProfile | undefined> {
+  if (!profileNeedsPassword(profile)) {
+    return profile;
+  }
+
+  const selected = await vscode.window.showWarningMessage(
+    `Profile '${profile.name}' has no stored password.`,
+    "Enter Password",
+    "Continue Without Password"
+  );
+
+  if (selected === "Continue Without Password") {
+    return profile;
+  }
+  if (selected !== "Enter Password") {
+    return undefined;
+  }
+
+  const password = await vscode.window.showInputBox({
+    title: "Query Analyzer Profile",
+    prompt: `Password for profile '${profile.name}' (stored in VS Code SecretStorage)`,
+    password: true
+  });
+
+  if (password === undefined) {
+    return undefined;
+  }
+  if (!password) {
+    return profile;
+  }
+
+  await context.secrets.store(passwordKey(profile.name), password);
+
+  return {
+    ...profile,
+    connection: {
+      ...profile.connection,
+      password
+    }
+  };
+}
+
+function profileNeedsPassword(profile: QueryAnalyzerProfile): boolean {
+  const engine = stringValue(profile.connection.engine);
+  return (
+    engine !== "sqlite" &&
+    Boolean(stringValue(profile.connection.username)) &&
+    !stringValue(profile.connection.password)
+  );
+}
+
 async function createProfile(
   config: vscode.WorkspaceConfiguration,
   context: vscode.ExtensionContext,
   configuredProfiles: ProfilesConfig
 ): Promise<QueryAnalyzerProfile | undefined> {
+  const form = await promptProfile(configuredProfiles);
+  if (!form) {
+    return undefined;
+  }
+
+  if (form.passwordChanged && form.password) {
+    await context.secrets.store(passwordKey(form.profile.name), form.password);
+  }
+
+  const target = configurationTarget();
+  await config.update("profiles", upsertProfile(configuredProfiles, profileForConfig(form.profile)), target);
+  await config.update("defaultProfile", form.profile.name, target);
+
+  vscode.window.showInformationMessage(`Query Analyzer profile '${form.profile.name}' created.`);
+  return form.profile;
+}
+
+async function editProfile(
+  config: vscode.WorkspaceConfiguration,
+  context: vscode.ExtensionContext,
+  existingProfile: QueryAnalyzerProfile
+): Promise<QueryAnalyzerProfile | undefined> {
+  const configuredProfiles = config.get<ProfilesConfig>("profiles", {});
+  const form = await promptProfile(configuredProfiles, existingProfile);
+  if (!form) {
+    return undefined;
+  }
+
+  const existingPassword =
+    (await context.secrets.get(passwordKey(existingProfile.name))) ??
+    stringValue(existingProfile.connection.password);
+  const usesPassword = stringValue(form.profile.connection.engine) !== "sqlite";
+  const passwordToStore = usesPassword
+    ? form.passwordChanged
+      ? form.password
+      : existingPassword || undefined
+    : undefined;
+  const profileForUse = passwordToStore
+    ? {
+        ...form.profile,
+        connection: { ...form.profile.connection, password: passwordToStore }
+      }
+    : form.profile;
+  const target = configurationTarget();
+
+  await config.update(
+    "profiles",
+    renameProfile(configuredProfiles, existingProfile.name, profileForConfig(profileForUse)),
+    target
+  );
+  await config.update(
+    "defaultProfile",
+    defaultProfileAfterRename(
+      config.get<string>("defaultProfile", ""),
+      existingProfile.name,
+      profileForUse.name
+    ),
+    target
+  );
+
+  if (passwordToStore) {
+    await context.secrets.store(passwordKey(profileForUse.name), passwordToStore);
+  } else {
+    await context.secrets.delete(passwordKey(profileForUse.name));
+  }
+  if (existingProfile.name !== profileForUse.name) {
+    await context.secrets.delete(passwordKey(existingProfile.name));
+  }
+
+  vscode.window.showInformationMessage(`Query Analyzer profile '${profileForUse.name}' updated.`);
+  return profileForUse;
+}
+
+async function removeProfile(
+  config: vscode.WorkspaceConfiguration,
+  context: vscode.ExtensionContext,
+  profile: QueryAnalyzerProfile
+): Promise<boolean> {
+  const selected = await vscode.window.showWarningMessage(
+    `Delete Query Analyzer profile '${profile.name}'?`,
+    { modal: true },
+    "Delete"
+  );
+
+  if (selected !== "Delete") {
+    return false;
+  }
+
+  const configuredProfiles = config.get<ProfilesConfig>("profiles", {});
+  const target = configurationTarget();
+
+  await config.update("profiles", deleteProfile(configuredProfiles, profile.name), target);
+  await config.update(
+    "defaultProfile",
+    defaultProfileAfterDelete(config.get<string>("defaultProfile", ""), profile.name),
+    target
+  );
+  await context.secrets.delete(passwordKey(profile.name));
+
+  vscode.window.showInformationMessage(`Query Analyzer profile '${profile.name}' deleted.`);
+  return true;
+}
+
+async function promptProfile(
+  configuredProfiles: ProfilesConfig,
+  existingProfile?: QueryAnalyzerProfile
+): Promise<ProfileFormResult | undefined> {
+  const existingConnection = existingProfile?.connection ?? {};
   const name = await vscode.window.showInputBox({
     title: "Query Analyzer Profile",
     prompt: "Profile name",
+    value: existingProfile?.name ?? "",
     validateInput: (value) => {
-      if (!value.trim()) {
+      const trimmed = value.trim();
+      if (!trimmed) {
         return "Profile name is required.";
       }
-      if (configuredProfiles[value.trim()]) {
+      if (trimmed !== existingProfile?.name && configuredProfiles[trimmed]) {
         return "A profile with this name already exists.";
       }
       return undefined;
@@ -199,7 +466,11 @@ async function createProfile(
     return undefined;
   }
 
-  const engine = await vscode.window.showQuickPick([...SUPPORTED_ENGINES], {
+  const currentEngine = stringValue(existingConnection.engine);
+  const engines = currentEngine
+    ? [currentEngine, ...SUPPORTED_ENGINES.filter((engine) => engine !== currentEngine)]
+    : [...SUPPORTED_ENGINES];
+  const engine = await vscode.window.showQuickPick(engines, {
     title: "Query Analyzer Profile",
     placeHolder: "Database engine"
   });
@@ -211,7 +482,7 @@ async function createProfile(
   const database = await vscode.window.showInputBox({
     title: "Query Analyzer Profile",
     prompt: engine === "sqlite" ? "SQLite database path or :memory:" : "Database name",
-    value: engine === "sqlite" ? ":memory:" : ""
+    value: stringValue(existingConnection.database) || (engine === "sqlite" ? ":memory:" : "")
   });
 
   if (database === undefined) {
@@ -227,7 +498,7 @@ async function createProfile(
     const host = await vscode.window.showInputBox({
       title: "Query Analyzer Profile",
       prompt: "Host",
-      value: "localhost"
+      value: stringValue(existingConnection.host) || "localhost"
     });
 
     if (host === undefined) {
@@ -238,7 +509,7 @@ async function createProfile(
     const port = await vscode.window.showInputBox({
       title: "Query Analyzer Profile",
       prompt: "Port",
-      value: defaultPort ? String(defaultPort) : "",
+      value: portValue(existingConnection.port) || (defaultPort ? String(defaultPort) : ""),
       validateInput: (value) => {
         if (!value.trim()) {
           return undefined;
@@ -256,7 +527,8 @@ async function createProfile(
 
     const username = await vscode.window.showInputBox({
       title: "Query Analyzer Profile",
-      prompt: "Username (optional)"
+      prompt: "Username (optional)",
+      value: stringValue(existingConnection.username)
     });
 
     if (username === undefined) {
@@ -265,7 +537,9 @@ async function createProfile(
 
     const password = await vscode.window.showInputBox({
       title: "Query Analyzer Profile",
-      prompt: "Password (optional, stored in VS Code SecretStorage)",
+      prompt: existingProfile
+        ? "Password (optional, leave blank to keep current)"
+        : "Password (optional, stored in VS Code SecretStorage)",
       password: true
     });
 
@@ -281,22 +555,59 @@ async function createProfile(
       connection.username = username;
     }
     if (password) {
-      await context.secrets.store(`${PASSWORD_PREFIX}${name.trim()}`, password);
       connection.password = password;
     }
+
+    return {
+      profile: {
+        name: name.trim(),
+        connection
+      },
+      password,
+      passwordChanged: password.length > 0
+    };
   }
 
-  const profile = {
-    name: name.trim(),
-    connection
+  return {
+    profile: {
+      name: name.trim(),
+      connection
+    },
+    passwordChanged: false
   };
-  const target = vscode.workspace.workspaceFolders
+}
+
+function profileForConfig(profile: QueryAnalyzerProfile): QueryAnalyzerProfile {
+  return {
+    ...profile,
+    connection: connectionForConfig(profile.connection)
+  };
+}
+
+function connectionForConfig(connection: ConnectionPayload): ConnectionPayload {
+  const nextConnection = { ...connection };
+  delete nextConnection.password;
+  return nextConnection;
+}
+
+function configurationTarget(): vscode.ConfigurationTarget {
+  return vscode.workspace.workspaceFolders
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
+}
 
-  await config.update("profiles", upsertProfile(configuredProfiles, profile), target);
-  await config.update("defaultProfile", profile.name, target);
+function queryAnalyzerConfig(): vscode.WorkspaceConfiguration {
+  return vscode.workspace.getConfiguration("queryAnalyzer");
+}
 
-  vscode.window.showInformationMessage(`Query Analyzer profile '${profile.name}' created.`);
-  return profile;
+function passwordKey(profileName: string): string {
+  return `${PASSWORD_PREFIX}${profileName}`;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function portValue(value: unknown): string {
+  return typeof value === "number" && Number.isInteger(value) ? String(value) : stringValue(value);
 }

@@ -6,6 +6,14 @@ import * as path from "node:path";
 export type ApiMode = "managed" | "external";
 export type SupportedTarget = "win32-x64" | "linux-x64" | "darwin-arm64";
 
+interface ManagedApiCommand {
+  command: string;
+  args: string[];
+  cwd: string;
+  env?: NodeJS.ProcessEnv;
+  display: string;
+}
+
 export interface OutputChannelLike {
   appendLine(value: string): void;
 }
@@ -32,13 +40,14 @@ export class ServerManager {
       return this.apiUrl;
     }
 
-    const executablePath = resolveBundledExecutablePath(this.extensionPath);
     const port = await findAvailablePort();
+    const command = resolveManagedApiCommand(this.extensionPath, port);
     const apiUrl = `http://127.0.0.1:${port}`;
 
-    this.output.appendLine(`Starting Query Analyzer API: ${executablePath} api --port ${port}`);
-    this.process = spawn(executablePath, ["api", "--host", "127.0.0.1", "--port", String(port)], {
-      cwd: this.extensionPath,
+    this.output.appendLine(`Starting Query Analyzer API: ${command.display}`);
+    this.process = spawn(command.command, command.args, {
+      cwd: command.cwd,
+      env: command.env,
       windowsHide: true
     });
     this.apiUrl = apiUrl;
@@ -122,9 +131,70 @@ export function resolveBundledExecutablePath(extensionPath: string): string {
   return executablePath;
 }
 
+export function resolveManagedApiCommand(extensionPath: string, port: number): ManagedApiCommand {
+  const target = resolveTargetPlatform();
+  if (!target) {
+    throw new Error(
+      `Managed Query Analyzer API is not bundled for ${process.platform}-${process.arch}. ` +
+        "Set queryAnalyzer.apiMode to external and configure queryAnalyzer.apiUrl."
+    );
+  }
+
+  const executablePath = buildBundledExecutablePath(extensionPath, target);
+  if (fs.existsSync(executablePath)) {
+    return {
+      command: executablePath,
+      args: ["api", "--host", "127.0.0.1", "--port", String(port)],
+      cwd: extensionPath,
+      display: `${executablePath} api --port ${port}`
+    };
+  }
+
+  const repoRoot = resolveDevelopmentRepoRoot(extensionPath);
+  if (repoRoot) {
+    return {
+      command: "uv",
+      args: ["run", "qa-api"],
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        QA_API_HOST: "127.0.0.1",
+        QA_API_PORT: String(port)
+      },
+      display: `uv run qa-api (cwd: ${repoRoot}, port: ${port})`
+    };
+  }
+
+  throw new Error(
+    `Bundled Query Analyzer executable was not found at ${executablePath}. ` +
+      "Install the platform-specific VSIX or set queryAnalyzer.apiMode to external."
+  );
+}
+
 export function buildBundledExecutablePath(extensionPath: string, target: SupportedTarget): string {
   const executableName = target.startsWith("win32") ? "qa.exe" : "qa";
   return path.join(extensionPath, "bin", executableName);
+}
+
+export function resolveDevelopmentRepoRoot(extensionPath: string): string | undefined {
+  let current = path.resolve(extensionPath);
+
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (
+      fs.existsSync(path.join(current, "pyproject.toml")) &&
+      fs.existsSync(path.join(current, "query_analyzer"))
+    ) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+    current = parent;
+  }
+
+  return undefined;
 }
 
 export async function findAvailablePort(): Promise<number> {

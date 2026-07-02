@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import test from "node:test";
 
 import {
   ServerManager,
   buildBundledExecutablePath,
   findAvailablePort,
+  resolveDevelopmentRepoRoot,
   resolveApiUrl,
+  resolveManagedApiCommand,
   resolveTargetPlatform
 } from "../src/serverManager";
 
@@ -19,6 +24,48 @@ test("resolveTargetPlatform maps supported release targets", () => {
 test("buildBundledExecutablePath chooses the platform executable name", () => {
   assert.match(buildBundledExecutablePath("/ext", "win32-x64"), /bin[\\/]qa\.exe$/);
   assert.match(buildBundledExecutablePath("/ext", "linux-x64"), /bin[\\/]qa$/);
+});
+
+test("resolveDevelopmentRepoRoot finds local source checkout from extension folder", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
+
+  assert.equal(
+    resolveDevelopmentRepoRoot(path.join(repoRoot, "integrations", "vscode-query-analyzer")),
+    repoRoot
+  );
+});
+
+test("resolveManagedApiCommand falls back to uv in local development", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
+  const command = resolveManagedApiCommand(
+    path.join(repoRoot, "integrations", "vscode-query-analyzer"),
+    8123
+  );
+
+  assert.equal(command.command, "uv");
+  assert.deepEqual(command.args, ["run", "qa-api"]);
+  assert.equal(command.cwd, repoRoot);
+  assert.equal(command.env?.QA_API_HOST, "127.0.0.1");
+  assert.equal(command.env?.QA_API_PORT, "8123");
+});
+
+test("resolveManagedApiCommand prefers bundled executable when present", () => {
+  const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qa-vscode-extension-"));
+  const target = resolveTargetPlatform();
+
+  if (!target) {
+    return;
+  }
+
+  const executablePath = buildBundledExecutablePath(extensionRoot, target);
+  fs.mkdirSync(path.dirname(executablePath), { recursive: true });
+  fs.writeFileSync(executablePath, "");
+
+  const command = resolveManagedApiCommand(extensionRoot, 8124);
+
+  assert.equal(command.command, executablePath);
+  assert.deepEqual(command.args, ["api", "--host", "127.0.0.1", "--port", "8124"]);
+  assert.equal(command.cwd, extensionRoot);
 });
 
 test("findAvailablePort returns a bindable local port", async () => {

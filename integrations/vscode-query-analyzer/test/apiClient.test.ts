@@ -9,8 +9,12 @@ import {
 } from "../src/apiClient";
 import {
   buildProfileDescription,
+  defaultProfileAfterDelete,
+  defaultProfileAfterRename,
   defaultPortForEngine,
+  deleteProfile,
   profilesFromConfig,
+  renameProfile,
   upsertProfile
 } from "../src/profiles";
 
@@ -118,6 +122,60 @@ test("upsertProfile preserves existing profiles", () => {
       pg: { engine: "postgresql", database: "query_analyzer" }
     }
   );
+});
+
+test("renameProfile moves a profile without changing the connection", () => {
+  assert.deepEqual(
+    renameProfile(
+      {
+        local: { engine: "sqlite", database: ":memory:" },
+        old: { engine: "postgresql", database: "query_analyzer" }
+      },
+      "old",
+      { name: "new", connection: { engine: "postgresql", database: "query_analyzer" } }
+    ),
+    {
+      local: { engine: "sqlite", database: ":memory:" },
+      new: { engine: "postgresql", database: "query_analyzer" }
+    }
+  );
+});
+
+test("renameProfile rejects duplicate target names", () => {
+  assert.throws(
+    () =>
+      renameProfile(
+        {
+          local: { engine: "sqlite", database: ":memory:" },
+          prod: { engine: "postgresql", database: "query_analyzer" }
+        },
+        "prod",
+        { name: "local", connection: { engine: "postgresql", database: "query_analyzer" } }
+      ),
+    /already exists/
+  );
+});
+
+test("deleteProfile removes only the selected profile", () => {
+  assert.deepEqual(
+    deleteProfile(
+      {
+        local: { engine: "sqlite", database: ":memory:" },
+        prod: { engine: "postgresql", database: "query_analyzer" }
+      },
+      "prod"
+    ),
+    {
+      local: { engine: "sqlite", database: ":memory:" }
+    }
+  );
+});
+
+test("default profile helpers update renamed and deleted defaults", () => {
+  assert.equal(defaultProfileAfterRename("old", "old", "new"), "new");
+  assert.equal(defaultProfileAfterRename("local", "old", "new"), "local");
+  assert.equal(defaultProfileAfterDelete("prod", "prod"), "");
+  assert.equal(defaultProfileAfterDelete("local", "prod"), "local");
 });
 
 test("defaultPortForEngine knows common engines", () => {
