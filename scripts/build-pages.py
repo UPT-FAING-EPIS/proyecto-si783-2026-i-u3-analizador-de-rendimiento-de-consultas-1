@@ -26,9 +26,11 @@ def title_for(path: Path) -> str:
 def render_markdown(source: Path, destination: Path) -> None:
     """Render one Markdown document into the Pages site."""
     raw = source.read_text(encoding="utf-8")
+    raw = raw.replace("<center>", '<div class="cover" markdown="1">')
+    raw = raw.replace("</center>", "</div>")
     body = markdown.markdown(
         raw,
-        extensions=["extra", "toc", "tables", "fenced_code", "sane_lists"],
+        extensions=["extra", "toc", "tables", "fenced_code", "sane_lists", "md_in_html"],
         output_format="html5",
     )
     body = re.sub(
@@ -135,6 +137,8 @@ th { background: #eef1f5; }
 pre { overflow: auto; background: #f0f2f5; padding: 12px; border-radius: 6px; }
 code { background: #f0f2f5; padding: 1px 4px; border-radius: 4px; }
 img { max-width: 100%; }
+.cover { text-align: center; }
+.cover img { max-height: 120px; width: auto; }
 .report-grid { display: grid; gap: 10px; padding-left: 20px; }
 @media (max-width: 600px) {
   .page { padding: 20px 14px 40px; overflow-wrap: anywhere; }
